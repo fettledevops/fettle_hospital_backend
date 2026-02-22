@@ -1,0 +1,21 @@
+# Virtual environment
+env/
+venv/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables / Secrets
+.env
+*.pem
+
+# IDEs
+.vscode/
+.idea/
+
+# Large files / temporary
+abcd.xlsx
+*.log
