@@ -128,7 +128,7 @@ class login_view(APIView):
                 try:
                     # hospital = Hospital_model.objects.get(name=name_email)
                     hospital_user = Hospital_user_model.objects.get(name=name_email)
-                except Admin_model.DoesNotExist:
+                except Hospital_user_model.DoesNotExist:
                     return Response({"msg": "Hospital not found", "error": 1})
                 if check_password(password, hospital_user.password_hash):
                     print("hello")
