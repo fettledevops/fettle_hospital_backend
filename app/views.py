@@ -541,11 +541,8 @@ class fetchpatients(APIView):
             hospital_ids=[]
             print("role--->",role)
             if role == 'user':
-                hospital_users=Hospital_user_model.objects.get(id=admin_id)
-                if hospital_users.calllog_engagement:
-                    hospital_ids.append(hospital_users.hospital.id)
-                else:
-                    return Response({"msg": "Invalid user", "error": 0})
+                hospital_users = Hospital_user_model.objects.get(id=admin_id)
+                hospital_ids.append(hospital_users.hospital.id)
             else:
                 restricted_hospital=list(
                     Hospital_user_model.objects.filter(
