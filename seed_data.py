@@ -20,6 +20,28 @@ def seed_data():
     )
     print(f"Using Hospital: {hospital.name}")
 
+    # Ensure a hospital user exists with all permissions enabled
+    hospital_user, user_created = Hospital_user_model.objects.get_or_create(
+        name="hospital_user",
+        defaults={
+            'hospital': hospital,
+            'password_hash': 'hospital123',
+            'patient_engagement': True,
+            'community_egagement': True,
+            'revisit_engagement': True,
+            'escalation_engagement': True,
+            'calllog_engagement': True,
+            'upload_engagement': True,
+            'pdf_engagement': True
+        }
+    )
+    if not user_created:
+        hospital_user.calllog_engagement = True
+        hospital_user.revisit_engagement = True
+        hospital_user.escalation_engagement = True
+        hospital_user.save()
+    print(f"Ensured Hospital User 'hospital_user' exists with full tab access.")
+
     # 2. Create some patients
     patients_data = [
         {"name": "John Doe", "phone": "9876543210", "dept": "Cardiology"},
