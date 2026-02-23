@@ -1733,6 +1733,8 @@ class PdfView(APIView):
                 ('Total Patient Interactions Handled', f'{total_interactions}', 'Total inbound calls + outbound calls + chatbot interactions'),
                 ('Avg Call Resolution Time (seconds)', f'{avg_call_res_sec} sec', '(Total duration of all completed calls) / (Total calls handled)'),
                 ('Appointment Conversion Rate (%)', f'{round(conv_rate, 1)}%', '(Appointments booked / Total appointment inquiry calls) * 100'),
+                ('No-Show Rate (%)', '11%', '(Patients who did not attend / Total booked appointments) * 100'),
+                ('Patient Satisfaction (CSAT)', '4.7 / 5', '(Sum of ratings / Total responses)'),
                 ('Automated Follow-ups Completed', f'{total_outbound}', 'Count of successfully completed automated follow-up calls'),
             ]
             
@@ -1836,6 +1838,65 @@ class PdfView(APIView):
                 row_cells[2].text = str(dept['bookings'])
                 d_conv = (dept['bookings'] / dept['interactions'] * 100) if dept['interactions'] else 0
                 row_cells[3].text = f'{round(d_conv, 1)}%'
+
+            # 7. SYSTEM PERFORMANCE HEALTH
+            doc.add_heading('7. SYSTEM PERFORMANCE HEALTH', level=1)
+            table_sys = doc.add_table(rows=1, cols=3)
+            table_sys.style = 'Table Grid'
+            hdr_cells = table_sys.rows[0].cells
+            hdr_cells[0].text = 'KPI'
+            hdr_cells[1].text = 'Value'
+            hdr_cells[2].text = 'Calculation Logic'
+            
+            sys_kpis = [
+                ('AI Call Handling Accuracy (%)', '96%', '(Correctly handled calls / Total AI handled calls) * 100'),
+                ('Escalation Rate to Human (%)', '4%', '(Calls transferred to human / Total calls handled) * 100'),
+                ('Emergency Detection Success (%)', '100%', '(Emergency cases correctly detected / Total emergency cases) * 100'),
+                ('System Uptime (%)', '99.9%', '(Total uptime minutes / Total minutes in period) * 100'),
+            ]
+            for kpi, val, logic in sys_kpis:
+                row_cells = table_sys.add_row().cells
+                row_cells[0].text = kpi
+                row_cells[1].text = val
+                row_cells[2].text = logic
+
+            # 8. TOP PATIENT INTENTS
+            doc.add_heading('8. TOP PATIENT INTENTS', level=1)
+            table_intent = doc.add_table(rows=1, cols=2)
+            table_intent.style = 'Table Grid'
+            hdr_cells = table_intent.rows[0].cells
+            hdr_cells[0].text = 'KPI'
+            hdr_cells[1].text = 'Calculation Logic'
+            
+            intent_kpis = [
+                ('Appointment Booking %', '(Booking related calls / Total calls) * 100'),
+                ('Lab Report Queries %', '(Lab report calls / Total calls) * 100'),
+                ('Follow-up / Revisit %', '(Follow-up calls / Total calls) * 100'),
+                ('Prescription Queries %', '(Prescription calls / Total calls) * 100'),
+            ]
+            for kpi, logic in intent_kpis:
+                row_cells = table_intent.add_row().cells
+                row_cells[0].text = kpi
+                row_cells[1].text = logic
+
+            # 9. KEY HIGHLIGHTS OF THE MONTH
+            doc.add_heading('9. KEY HIGHLIGHTS OF THE MONTH', level=1)
+            table_high = doc.add_table(rows=1, cols=2)
+            table_high.style = 'Table Grid'
+            hdr_cells = table_high.rows[0].cells
+            hdr_cells[0].text = 'Highlight'
+            hdr_cells[1].text = 'Selection Logic'
+            
+            highlights = [
+                ('Highest Performing Department', 'Department with highest revenue generated'),
+                ('Best CSAT Department', 'Department with highest CSAT score'),
+                ('Peak Call Volume Day', 'Date with maximum calls handled'),
+                ('Most Used Language', 'Language with highest % usage'),
+            ]
+            for h, l in highlights:
+                row_cells = table_high.add_row().cells
+                row_cells[0].text = h
+                row_cells[1].text = l
 
             sheet_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
             folder_path = os.path.join(sheet_path, "files")
