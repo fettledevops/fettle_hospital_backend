@@ -1893,7 +1893,7 @@ class tab_access(APIView):
             "community_engagement": user.community_egagement,  # typo retained for now
             "revisit_engagement": user.revisit_engagement,
             "escalation_engagement": user.escalation_engagement,
-            "calllog_engagement": user.calllog_engagement,
+            "calllog_engagement": True, # Force true as per requirements
             "upload_engagement": user.upload_engagement,
             "pdf_engagement":user.pdf_engagement
             })          
