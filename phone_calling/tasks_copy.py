@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import json
 client = OpenAI()
+import os
 # sample_response={
 #     "subscriptionLimits": {
 #         "concurrencyBlocked": False,
@@ -401,7 +402,8 @@ def process_outbound_calls(json_payload):
         print("db_outbound_hospital_id->",db_outbound_hospital_id)
         vapi_id=json_payload["vapi_id"]
         patient_idd=json_payload['patient_id']
-                    token = os.getenv('VAPI_TOKEN')        url = f"https://api.vapi.ai/call/{vapi_id}"
+                    token = os.getenv('VAPI_TOKEN')
+                    url = f"https://api.vapi.ai/call/{vapi_id}"
         headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
