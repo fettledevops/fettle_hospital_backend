@@ -135,7 +135,8 @@ class Outbound_call(APIView):
 
             calling=[]
             for i in patient_data:
-                id_key=str(i["id"])+"__"+i["hospital_name"]+"__"+i["mobile_no"]+"__"+datetime.now().strftime("%Y%m%d%H%M%S")
+                # Use CloudConnect SIP Trunking via LiveKit SIP
+                id_key=str(i["id"])+"__"+i["hospital_name"]+"__"+i["mobile_no"]+"__"+datetime.now().strftime("%Y%m%d%H%M%S")+"__livekit"
                 metadata={
                     "patient_id":str(i["id"]),
                     "patient_name":i["patient_name"],
@@ -146,23 +147,15 @@ class Outbound_call(APIView):
                     "language_policy": "Strictly ONLY English, Hindi, or Telugu. If the patient speaks any other language, politely end the call and mark as language_barrier."
                 }
                 
-                # Use SIP Trunk ID if call_id is not set
-                phone_number_id = call_id or settings.VAPI_SIP_TRUNK_ID
-                
                 json_payload={
-                    "assistantId": assistant_id,
-                    "phoneNumberId": phone_number_id,
                     "customer": {"number": "+91"+i["mobile_no"], "id_key": id_key},
                     "metadata": metadata
                 }
-                # calling.append(json_payload)
-                # print("json_payload--->",json_payload)
                 calling.append(call_outbound_task.delay(json_payload).id)
-                ##call in celery
+                ## Call triggered via Celery dispatch_call task
 
             return Response({
-                "msg": "Assistant found",
-                "assistant_id": assistant_id,
+                "msg": "Agent batch initiated",
                 "campaign_id": str(campaign_obj.id),
                 "patients":patient_data,
                 "calling":calling,
@@ -367,48 +360,6 @@ class download_excel_outbound(APIView):
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
 
-class VapiWebhook(APIView):
-    """
-    Handle Vapi.ai Webhooks for CloudConnect SIP calls.
-    Triggered when a call ends to process transcript and audio.
-    """
-    def post(self, request):
-        try:
-            payload = request.data
-            message_type = payload.get("message", {}).get("type")
-            
-            print(f"Vapi Webhook Received: {message_type}")
-
-            if message_type == "end-of-call-report":
-                call_data = payload.get("message", {}).get("call", {})
-                vapi_id = call_data.get("id")
-                customer_id_key = call_data.get("customer", {}).get("id_key", "")
-                
-                metadata = call_data.get("metadata", {})
-                patient_id = metadata.get("patient_id")
-                hospital_name = metadata.get("hospital")
-                
-                transcript = call_data.get("transcript", "")
-                recording_url = call_data.get("recordingUrl")
-                
-                from .tasks import process_vapi_webhook_task
-                process_vapi_webhook_task.delay({
-                    "vapi_id": vapi_id,
-                    "customer_id_key": customer_id_key,
-                    "patient_id": patient_id,
-                    "hospital_name": hospital_name,
-                    "transcript": transcript,
-                    "recording_url": recording_url,
-                    "started_at": call_data.get("startedAt"),
-                    "ended_at": call_data.get("endedAt"),
-                    "duration": call_data.get("duration"),
-                    "ended_reason": call_data.get("endedReason")
-                })
-
-            return Response({"status": "success"}, status=200)
-        except Exception as e:
-            print(f"Vapi Webhook Error: {str(e)}")
-            return Response({"error": str(e)}, status=500)
         
         
         

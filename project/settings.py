@@ -36,7 +36,6 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
 AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME')
 LIVEKIT_BUCKET_NAME = os.getenv('LIVEKIT_BUCKET_NAME')
-VAPI_SIP_TRUNK_ID = os.getenv('VAPI_SIP_TRUNK_ID')
 SECRET_KEY = os.getenv('SECRET_KEY') or 'django-insecure-ux!!gne%@sfd1q3-hf$p+v6xqx=4877v$lm$gqyhoeuy-r-5q#'
 
 # Application definition

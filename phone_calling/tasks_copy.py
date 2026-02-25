@@ -37,16 +37,15 @@ import os
 #         "patient_id": "1",
 #         "patient_name": "1"
 #     },
-#     "phoneCallProvider": "twilio",
-#     "phoneCallProviderId": "CAbd8b6723c5cb01e2911764b28e3ae966",
+#     "phoneCallProvider": "cloudconnect",
 #     "phoneCallTransport": "pstn",
 #     "monitor": {
-#         "listenUrl": "wss://phone-call-websocket.aws-us-west-2-backend-production2.vapi.ai/019a9c95-32a0-7ccd-93e9-2655308be9ae/listen",
-#         "controlUrl": "https://phone-call-websocket.aws-us-west-2-backend-production2.vapi.ai/019a9c95-32a0-7ccd-93e9-2655308be9ae/control"
+#         "listenUrl": "REDACTED",
+#         "controlUrl": "REDACTED"
 #     },
 #     "transport": {
-#         "callSid": "CAbd8b6723c5cb01e2911764b28e3ae966",
-#         "provider": "twilio",
+#         "callSid": "REDACTED",
+#         "provider": "cloudconnect",
 #         "accountSid": "REDACTED",
 #         "conversationType": "voice"
 #     }

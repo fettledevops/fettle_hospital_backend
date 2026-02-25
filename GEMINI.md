@@ -12,7 +12,7 @@ Fettle Backend is a Django-based system designed for managing and analyzing hosp
     -   **OpenAI:** For call analysis, summarization, and sentiment extraction.
     -   **Vapi.ai:** For automated outbound calling.
     -   **LiveKit:** For real-time voice agents (`agent_dispatch`).
-    -   **Twilio:** For WhatsApp messaging and telephony integration.
+    -   **CloudConnect:** For SIP telephony and Indian DIDs.
 -   **Storage:** AWS S3 for audio files and transcripts.
 -   **Data Processing:** `pandas` (reporting), `python-docx` (document generation), `docx2pdf`.
 
@@ -20,7 +20,7 @@ Fettle Backend is a Django-based system designed for managing and analyzing hosp
 
 -   `project/`: Core Django configuration (`settings.py`, `urls.py`, `celery.py`).
 -   `app/`: Core domain models (Hospital, Patient, Admin) and general dashboard APIs.
--   `phone_calling/`: Management of call tasks (inbound/outbound), LiveKit integration, and Vapi.ai hooks.
+-   `phone_calling/`: Management of call tasks (inbound/outbound), LiveKit integration, and SIP orchestration.
 -   `inbound_dashboard/`: Specialized views and analytics for inbound call performance.
 -   `env/`: Python virtual environment (standard location).
 
@@ -42,7 +42,7 @@ Fettle Backend is a Django-based system designed for managing and analyzing hosp
 ## 📝 Development Conventions
 
 -   **API First:** All new functionality should be exposed via DRF views in the `api/` namespace.
--   **Task Offloading:** Any operation involving external AI APIs (Vapi, OpenAI, LiveKit) or document generation must be handled asynchronously via Celery.
--   **Environment Variables:** Sensitive keys (AWS, OpenAI, Twilio, LiveKit) are managed via `.env`. Do not hardcode secrets.
+-   **Task Offloading:** Any operation involving external AI APIs (OpenAI, LiveKit) or document generation must be handled asynchronously via Celery.
+-   **Environment Variables:** Sensitive keys (AWS, OpenAI, CloudConnect, LiveKit) are managed via `.env`. Do not hardcode secrets.
 -   **Timezone:** The project uses `Asia/Kolkata` as the primary timezone, though Celery is configured for `Australia/Tasmania` (verify if this discrepancy is intentional).
 -   **SSL:** Use `sslserver` for local development to ensure compatibility with real-time communication protocols.
