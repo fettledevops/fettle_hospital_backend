@@ -135,7 +135,7 @@ class Outbound_call(APIView):
 
             calling=[]
             for i in patient_data:
-                # Use CloudConnect SIP Trunking via LiveKit SIP
+                # Dispatching via LiveKit + CloudConnect SIP
                 id_key=str(i["id"])+"__"+i["hospital_name"]+"__"+i["mobile_no"]+"__"+datetime.now().strftime("%Y%m%d%H%M%S")+"__livekit"
                 metadata={
                     "patient_id":str(i["id"]),
@@ -152,10 +152,9 @@ class Outbound_call(APIView):
                     "metadata": metadata
                 }
                 calling.append(call_outbound_task.delay(json_payload).id)
-                ## Call triggered via Celery dispatch_call task
 
             return Response({
-                "msg": "Agent batch initiated",
+                "msg": "Outbound campaign initiated via CloudConnect",
                 "campaign_id": str(campaign_obj.id),
                 "patients":patient_data,
                 "calling":calling,
@@ -208,23 +207,18 @@ class Process_Outbound_call(APIView):
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
 class Inboundcall(APIView):
-    def post(self,request):
+    """
+    Handle Inbound Call triggers from LiveKit SIP.
+    """
+    def post(self, request):
         try:
-            print("request--->",request.data)
-            print("raaa",request.data["message"]["call"])
-            res=inbound_call_task.delay(request.data["message"]["call"]).id
-            return Response({"task_id":res})
-            # pass
+            print("Inbound Call Request Received:", request.data)
+            # LiveKit SIP usually handles room creation automatically.
+            # This endpoint can be used for secondary notifications or metadata logging.
+            return Response({"status": "acknowledged"})
         except Exception as e:
-            print("str()--->",str(e))
-            return Response("error")
-    def get(self,request):
-        try:
-            print("get")
-            print("request get--->",request.data)
-            return Response("running")
-        except Exception as e:
-            return Response("ERROR")
+            return Response({"error": str(e)}, status=500)
+
 class showInboundcall(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self,request):
@@ -233,33 +227,30 @@ class showInboundcall(APIView):
             role = request.role
             if role=='user':
                 return Response({"msg":"Invalid User","error":0})
-            all_patients=Inbound_Hospital.objects.all()
+            all_patients=Inbound_Hospital.objects.all().order_by('-started_at')
             print("ok",len(all_patients))
             arr=[]
-            def make_naive(dt, tz_name='UTC'):
+            def make_naive(dt, tz_name='Asia/Kolkata'):
                 import pytz
-                if dt is None:
-                    return None
-                # If dt is timezone-aware, convert to tz_name and then drop tzinfo.
+                if dt is None: return None
                 if getattr(dt, "tzinfo", None) is not None:
                     target_tz = pytz.timezone(tz_name)
                     return dt.astimezone(target_tz).replace(tzinfo=None)
-                # already naive
                 return dt
-            
             
             for i in all_patients:
                 arr.append({
                     "from_phone_number":i.from_phone_number,
                     "to_phone_number":i.to_phone_numnber,
-                    "status":"queued" if i.calling_process=="not_happened" else i.calling_process,
+                    "status":"in_progress" if i.calling_process=="not_happened" else i.calling_process,
                     "audio_link":i.audio_link,
-                    "started_at":make_naive(i.started_at,tz_name='Asia/Kolkata'),
-                    "ended_at":make_naive(i.ended_at,tz_name='Asia/Kolkata')
+                    "started_at":make_naive(i.started_at),
+                    "ended_at":make_naive(i.ended_at)
                 })
             return Response({"error":0,"patients":arr})
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
+
 class processinboundcall_view(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -268,40 +259,67 @@ class processinboundcall_view(APIView):
             role = request.role
             if role=='user':
                 return Response({"msg":"Invalid User","error":0})
-            all_patients=Inbound_Hospital.objects.all()
-            print("ok",len(all_patients))
-            arr=[]
-            def make_naive(dt, tz_name='UTC'):
-                import pytz
-                if dt is None:
-                    return None
-                # If dt is timezone-aware, convert to tz_name and then drop tzinfo.
-                if getattr(dt, "tzinfo", None) is not None:
-                    target_tz = pytz.timezone(tz_name)
-                    return dt.astimezone(target_tz).replace(tzinfo=None)
-                # already naive
-                return dt
-            for i in all_patients:
-                
-                arr.append({
-                    "patient_id":str(i.id),
-                    "from_phone_number":i.from_phone_number,
-                    "to_phone_number":i.to_phone_numnber,
-                    "vapi_id":str(i.vapi_id),
-                    "status":"queued" if i.calling_process=="not_happened" else i.calling_process,
-                    "audio_link":i.audio_link,
-                    "started_at":i.started_at,
-                    "ended_at":i.ended_at
-                })
+            
+            # This view is for re-processing historical inbound calls if automation fails
+            all_patients=Inbound_Hospital.objects.filter(calling_process="not_happened")
             processing_ids=[]
             calling=[]
-            for i in arr:
-                res=process_inbound_calls.delay(i).id
-                processing_ids.append(i["patient_id"])
+            for i in all_patients:
+                payload = {
+                    "patient_id": str(i.id),
+                    "vapi_id": i.vapi_id, # room_name in LiveKit context
+                    "is_livekit": True
+                }
+                res=process_inbound_calls.delay(payload).id
+                processing_ids.append(str(i.id))
                 calling.append(res)
             return Response({"processing_ids":processing_ids,"calling_task_id":calling})
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
+
+from livekit import api
+
+class LiveKitWebhook(APIView):
+    """
+    Handle LiveKit Webhooks.
+    Automatically triggers processing when a room (call) finishes.
+    """
+    def post(self, request):
+        try:
+            # LiveKit webhook verification would go here in production
+            # For now, we process the event payload
+            event = request.data
+            event_type = event.get("event")
+            room_name = event.get("room", {}).get("name")
+
+            print(f"LiveKit Webhook: {event_type} for Room: {room_name}")
+
+            if event_type == "room_finished" and room_name:
+                # room_name is our id_key
+                try:
+                    call_obj = Outbound_Hospital.objects.get(vapi_id=room_name)
+                    
+                    # Prepare payload for processing task
+                    process_payload = {
+                        "id": str(call_obj.id),
+                        "vapi_id": call_obj.vapi_id,
+                        "is_livekit": True,
+                        "patient_id": str(call_obj.patient_id.id),
+                        "mobile_no": call_obj.patient_id.mobile_no,
+                        "hospital_name": call_obj.patient_id.hospital.name
+                    }
+                    
+                    # Trigger processing automatically
+                    process_outbound_calls.delay(process_payload)
+                    print(f"Automatic processing triggered for: {room_name}")
+                    
+                except Outbound_Hospital.DoesNotExist:
+                    print(f"Webhook error: Call record not found for room {room_name}")
+
+            return Response({"status": "received"}, status=200)
+        except Exception as e:
+            print(f"LiveKit Webhook Exception: {str(e)}")
+            return Response({"error": str(e)}, status=500)
 
 class download_excel_outbound(APIView):
     authentication_classes = [JWTAuthentication]

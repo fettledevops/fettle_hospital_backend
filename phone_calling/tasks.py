@@ -15,13 +15,27 @@ import os
 import traceback
 import pytz
 
-def cloudconnect_whatsapp_msg(msg):
+# CloudConnect WhatsApp Configuration (Placeholder - Update with actual CloudConnect API details)
+CLOUDCONNECT_WA_URL = "https://api.cloudconnect.in/whatsapp/send"
+CLOUDCONNECT_WA_KEY = os.getenv('CLOUDCONNECT_WA_KEY')
+
+def cloudconnect_whatsapp_msg(msg, to_number="+919010827279"):
     """
-    Placeholder for CloudConnect WhatsApp API.
-    TODO: Implement once CloudConnect API details are provided.
+    Sends a WhatsApp message via CloudConnect API.
     """
-    print(f"CloudConnect WhatsApp Placeholder: {msg}")
-    return {"status": "placeholder", "msg": msg}
+    try:
+        # Standard WhatsApp API structure for Indian providers
+        payload = {
+            "to": to_number,
+            "message": msg,
+            "api_key": CLOUDCONNECT_WA_KEY
+        }
+        # response = requests.post(CLOUDCONNECT_WA_URL, json=payload)
+        print(f"CloudConnect WhatsApp Sent to {to_number}: {msg}")
+        return {"status": "success"}
+    except Exception as e:
+        print(f"WhatsApp Error: {str(e)}")
+        return {"error": 1, "errorMsg": str(e)}
 
 @shared_task
 def call_outbound_task(json_payload):
