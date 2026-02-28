@@ -32,6 +32,17 @@ from django.http import FileResponse
 # Create your views here.
 from django.db.models.functions import Coalesce
 
+def make_naive(dt, tz_name='Asia/Kolkata'):
+    import pytz
+    if dt is None:
+        return None
+    target_tz = pytz.timezone(tz_name)
+    # If datetime is timezone-aware → convert to IST → drop tzinfo
+    if dt.tzinfo is not None:
+        return dt.astimezone(target_tz).replace(tzinfo=None)
+    # If datetime is naive → assume UTC → convert to IST
+    return pytz.utc.localize(dt).astimezone(target_tz).replace(tzinfo=None)
+
 class Patientengagement_inbound(APIView):
     authentication_classes = [JWTAuthentication]
 
