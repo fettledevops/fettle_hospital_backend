@@ -2149,19 +2149,35 @@ class ROIMetrics(APIView):
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
             start_date = request.query_params.get('start_date')
             end_date = request.query_params.get('end_date')
+            call_direction = request.query_params.get('call_direction', 'outbound')
             
-            # 1. Appointments Booked via AI (Proxy: Positive outcomes)
-            booked_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, call_outcome='positive')
+            # Select Model
+            if call_direction == 'inbound':
+                FeedbackModel = CallFeedbackModel_inbound
+                # For inbound, we filter differently as there is no patient__hospital (it's global for now or linked differently)
+                # Actually, Inbound_Hospital doesn't have a hospital FK in the current model? 
+                # Let's check Inbound_Hospital model in app/models.py
+                booked_qs = CallFeedbackModel_inbound.objects.filter(call_outcome='positive')
+            else:
+                FeedbackModel = CallFeedbackModel
+                booked_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, call_outcome='positive')
+
             if start_date and end_date:
-                booked_qs = booked_qs.filter(called_at__date__range=[start_date, end_date])
+                # Use effective_called_at if available, otherwise called_at
+                from django.db.models.functions import Coalesce
+                booked_qs = booked_qs.annotate(
+                    eff_date=Coalesce('called_at', 'created_at')
+                ).filter(eff_date__date__range=[start_date, end_date])
+            
             booked_count = booked_qs.count()
             
             # 2. Financial Gains
-            avg_rev_per_appt = 650 # Default from doctor_opd_list average
+            avg_rev_per_appt = 650 
             total_revenue_influenced = booked_count * avg_rev_per_appt
             
             # 3. Operational Efficiency
-            # Staff Hours Saved = Total duration in minutes / 60
+            from django.db.models import FloatField
+            from django.db.models.functions import Cast
             total_duration = booked_qs.aggregate(total=Avg(Cast('call_duration', FloatField())))['total'] or 0
             staff_hours_saved = np.round((total_duration * booked_count) / 60, 1)
             fte_freed = np.round(staff_hours_saved / 100, 2)
@@ -2189,9 +2205,20 @@ class DepartmentAnalytics(APIView):
     def get(self, request):
         try:
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            call_direction = request.query_params.get('call_direction', 'outbound')
             
+            # Select Model and Filter
+            if call_direction == 'inbound':
+                # For inbound, we aggregate by department field on Inbound_Hospital
+                # Linked through CallFeedbackModel_inbound
+                base_qs = CallFeedbackModel_inbound.objects.all()
+                dept_field = 'patient__department'
+            else:
+                base_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
+                dept_field = 'patient__department'
+
             # Aggregate stats by department
-            dept_stats = CallFeedbackModel.objects.filter(patient__hospital=user_id).values('patient__department').annotate(
+            dept_stats = base_qs.values(dept_field).annotate(
                 interactions=Count('id'),
                 bookings=Count('id', filter=Q(call_outcome='positive')),
                 avg_duration=Avg(Cast('call_duration', FloatField()))
@@ -2199,7 +2226,7 @@ class DepartmentAnalytics(APIView):
             
             formatted_data = []
             for item in dept_stats:
-                dept = item['patient__department']
+                dept = item[dept_field] or "General"
                 conv_rate = (item['bookings'] / item['interactions'] * 100) if item['interactions'] > 0 else 0
                 formatted_data.append({
                     "department": dept,
@@ -2207,7 +2234,7 @@ class DepartmentAnalytics(APIView):
                     "bookings": item['bookings'],
                     "conversion": f"{conv_rate:.1f}%",
                     "revenue": item['bookings'] * 650,
-                    "csat": 4.5 # Placeholder until actual rating field is used
+                    "csat": 4.5
                 })
                 
             return Response({

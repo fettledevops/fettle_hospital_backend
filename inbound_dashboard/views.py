@@ -107,6 +107,8 @@ class Patientengagement_inbound(APIView):
                 .values(
                     'call_outcome',
                     'remarks',
+                    'effective_called_at',
+                    'patient__from_phone_number',
                     'patient__to_phone_numnber'
                 )
             )
@@ -435,6 +437,7 @@ class EscalationEngagement_inbound(APIView):
                 'department',
                 'issue_description',
                 'patient__from_phone_number',
+                'patient__to_phone_numnber',
             )
         )
             from collections import defaultdict
@@ -444,8 +447,9 @@ class EscalationEngagement_inbound(APIView):
             for item in dept_qs:
                 if item['issue_description']:  # skip empty issues
                     dept_dict[item['department']].append({
-                        "patient_name": item['patient__to_phone_numnber'],
-                        "issue": item['issue_description']
+                        "patient_name": item['patient__from_phone_number'],
+                        "issue": item['issue_description'],
+                        "mobile_no": item['patient__from_phone_number']
                     })
 
             department_escalation_data = [
@@ -867,7 +871,7 @@ class KPISummary_inbound(APIView):
                 escalated_change = 100.0 if escalated_this_month > 0 else 0.0
                 escalated_trend = "up" if escalated_this_month > 0 else "flat"
             
-            total_escalation = EscalationModel_inbound.objects.count()
+            total_escalation = CallFeedbackModel_inbound.objects.count()
             escalation_card = {
                 "title": "Escalated Issues",
                 "value": str(total_escalation),
@@ -877,11 +881,76 @@ class KPISummary_inbound(APIView):
                 "color": "orange"
             }
 
+            # === SPRINT 1 TABLE 1: KEY OUTCOMES (INBOUND) ===
+            
+            # 1. Total Interactions (Inbound specific)
+            total_interactions = CallFeedbackModel_inbound.objects.filter(
+                effective_called_at__date__gte=start_of_this_month, 
+                effective_called_at__date__lte=today
+            ).count()
+            
+            interactions_card = {
+                "title": "Inbound Interactions",
+                "value": f"{total_interactions:,}",
+                "change": "Live",
+                "trend": "up",
+                "icon": "Users",
+                "color": "blue"
+            }
+
+            # 2. Avg Call Resolution Time
+            avg_res_time = base_qs.filter(
+                effective_called_at__date__gte=start_of_this_month,
+                effective_called_at__date__lte=today
+            ).aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
+            
+            resolution_card = {
+                "title": "Avg Resolution",
+                "value": f"{int(avg_res_time * 60)} sec",
+                "change": "Live",
+                "trend": "up",
+                "icon": "Clock",
+                "color": "green"
+            }
+
+            # 3. Appointment Conversion Rate
+            total_inquiries = total_interactions
+            booked = base_qs.filter(
+                call_outcome='positive', 
+                effective_called_at__date__gte=start_of_this_month, 
+                effective_called_at__date__lte=today
+            ).count()
+            conv_rate = (booked / total_inquiries * 100) if total_inquiries > 0 else 0
+            
+            conversion_card = {
+                "title": "Inbound Conversion",
+                "value": f"{conv_rate:.1f}%",
+                "change": "Target 40%",
+                "trend": "up" if conv_rate > 40 else "down",
+                "icon": "TrendingUp",
+                "color": "purple"
+            }
+
+            # 4. No-Show Rate (Placeholder)
+            no_show_rate = 11.0 
+            noshow_card = {
+                "title": "No-Show Rate",
+                "value": f"{no_show_rate}%",
+                "change": "Baseline",
+                "trend": "flat",
+                "icon": "UserX",
+                "color": "red"
+            }
+
             return Response({
                 "total_patients_contacted": patients_contact,
                 "call_answer_rate": call_rate,
                 "community_conversion": community_card,
-                "escalated_issues": escalation_card
+                "escalated_issues": escalation_card,
+                "interactions": interactions_card,
+                "resolution": resolution_card,
+                "conversion": conversion_card,
+                "noshow": noshow_card
             })
 
         except Exception as e:
