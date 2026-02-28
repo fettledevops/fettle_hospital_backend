@@ -1,0 +1,14 @@
+[Unit]
+Description=Django Fettle Backend Persistent Service
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/fettle_backend
+ExecStart=/home/fettle_backend/env/bin/python manage.py runsslserver 0.0.0.0:8000 --certificate /home/fettle_backend/fullchain.pem --key /home/fettle_backend/privkey.pem
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

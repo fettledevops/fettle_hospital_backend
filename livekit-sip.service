@@ -1,0 +1,15 @@
+[Unit]
+Description=LiveKit SIP Bridge
+After=network.target livekit-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/etc/livekit
+ExecStart=/usr/local/bin/livekit-sip --config /etc/livekit/sip.yaml
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
