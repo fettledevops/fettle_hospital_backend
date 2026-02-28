@@ -44,6 +44,8 @@ urlpatterns = [
     path("api/tab_access/",tab_access.as_view()),
     path("api/pdf_view/",PdfView.as_view()),
     path("api/campaigns/",CampaignView.as_view()),
+    path("api/roi_metrics/", ROIMetrics.as_view()),
+    path("api/department_analytics/", DepartmentAnalytics.as_view()),
     path("api/outbound_call/",Outbound_call.as_view()),
     path("api/process_outbound_call/",Process_Outbound_call.as_view()),
     path("api/download_excel/",download_excel_outbound.as_view()),

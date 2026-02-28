@@ -1,0 +1,22 @@
+DATA REQUEST FOR ANALYTICS BASELINE - FETTLE CONNECT
+
+To provide accurate ROI and Financial Intelligence reports, we require the following baseline data from the hospital:
+
+1. NO-SHOW BASELINE
+   - Current percentage of patients who book an appointment but do not attend (Pre-Fettle implementation).
+   - This is used to calculate "No-Show Reduction Revenue Recovered".
+
+2. HR & OPERATIONAL COSTS
+   - Average monthly salary/payroll cost for a front-desk/calling staff member.
+   - Average hours spent per day by staff on manual follow-up calls.
+   - This is used to calculate "Cost Efficiency Value" and "Equivalent FTE Freed".
+
+3. REVENUE ASSUMPTIONS
+   - Average revenue per Outpatient (OPD) appointment (if different from the ₹650 average calculated from the doctor list).
+   - Average conversion rate from a missed call to a booked appointment.
+
+4. HISTORICAL INTERACTION DATA
+   - Total number of inbound calls received monthly before Fettle.
+   - Current "Call Answer Rate" by human staff.
+
+Please provide this data in an Excel or text format so we can calibrate the analytics engine.
