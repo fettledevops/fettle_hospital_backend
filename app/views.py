@@ -898,8 +898,8 @@ class Patientengagement(APIView):
             )
 
             total_calls_all_period = result['total_calls']
-            average_call_duration = result['avg_call_duration']
-            meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(average_call_duration,2)}
+            average_call_duration = result['avg_call_duration'] or 0
+            meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(float(average_call_duration),2)}
             answered_calls = CallFeedbackModel.objects.filter(call_status='connected', called_at__date__gt=start_of_week,patient__hospital=user_id).count()
             not_answered = total_calls - answered_calls
 
