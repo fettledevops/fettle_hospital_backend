@@ -59,12 +59,11 @@ class Patientengagement_inbound(APIView):
                 today = timezone.now().date()
                 start_of_week = today - timedelta(days=90)
 
-            # === 1. Contacts per Day ===
+            # === 1. Contacts per Day (Raw Inbound Attempts) ===
             contacts_qs = (
-                CallFeedbackModel_inbound.objects
-                .annotate(effective_called_at=Coalesce('called_at', 'created_at'))
-                .filter(effective_called_at__date__gte=start_of_week, effective_called_at__date__lte=today)
-                .annotate(day=TruncDate('effective_called_at'))
+                Inbound_Hospital.objects
+                .filter(started_at__date__gte=start_of_week, started_at__date__lte=today)
+                .annotate(day=TruncDate('started_at'))
                 .values('day')
                 .annotate(contacts=Count('id'))
             )
@@ -78,11 +77,14 @@ class Patientengagement_inbound(APIView):
                 day_map[date_w.strftime("%b %d")]=0
             
             for item in contacts_qs:
-                day_label = item['day'].strftime("%b %d")
-                if day_label in day_map:
-                    day_map[day_label] += item['contacts']
+                if item['day']:
+                    day_label = item['day'].strftime("%b %d")
+                    if day_label in day_map:
+                        day_map[day_label] += item['contacts']
 
             contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
+            if len(contacts_data) > 31:
+                contacts_data = contacts_data[::(len(contacts_data)//31)]
 
             # === 2. Call Answer Data ===
             # Apply filter

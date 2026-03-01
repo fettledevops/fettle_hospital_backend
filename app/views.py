@@ -1307,8 +1307,8 @@ class EscalationEngagement(APIView):
                 avg_time=Avg('resolution_duration')
             )['avg_time']
 
-            # Step 2: Convert to minutes
-            avg_resolution_minutes = np.round(avg_resolution_time.total_seconds() / 60,2) if avg_resolution_time else 0
+            # Step 2: Convert to Days
+            avg_resolution_days = np.round(avg_resolution_time.total_seconds() / 86400, 2) if avg_resolution_time else 0
             
 
             resolved_today = EscalationModel.objects.filter(
@@ -1319,7 +1319,7 @@ class EscalationEngagement(APIView):
             
             meta_data={
                 "total_escalations":total_escalations,
-                "avg_resolution_time":avg_resolution_minutes,
+                "avg_resolution_time":avg_resolution_days,
                 "resolved_today":resolved_today
 
             }
@@ -1399,80 +1399,32 @@ class PdfView(APIView):
             start_str = f"{get_ordinal(start_date.day)} {start_date.strftime('%B %Y')}"
             end_str = f"{get_ordinal(end_date.day)} {end_date.strftime('%B %Y')}"
             dict_obj={}
-            dict_obj['{{reporting_period}}']=f"{start_str} to {end_str}"
-            dict_obj['{{hospital_name}}']=hospital_name.title()
-            print("user_id---->",user_id)
-            connected_data = CallFeedbackModel.objects.filter(
-                    
-                    called_at__date__gte=start_date,
-                    called_at__date__lte=end_date,
-                    patient__hospital=user_id
-                ).distinct().count()
-            print("connected---->",connected_data)
-            community_members=CallFeedbackModel.objects.filter(called_at__date__gte=start_date,called_at__date__lte=end_date,community_added=True,patient__hospital=user_id).distinct().count()
-            poll_participants = CommunityEngagementModel.objects.filter(
-                    created_at__date__gte=start_date,created_at__date__lte=end_date,engagement_type='poll_participation',patient__hospital=user_id
-                ).values('patient').distinct().count()
-            total_escalations = EscalationModel.objects.filter(escalated_at__date__gte=start_date,escalated_at__date__lte=end_date,patient__hospital=user_id).count()
-            queryset = Patient_date_model.objects.filter(
-                date__range=(start_date, end_date),
-                hospital=user_id
-            )
-
-            # Count of unique (hospital, mobile_no) pairs
-            unique_patients = queryset.values('hospital', 'mobile_no').distinct().count()
-
-            # Group by hospital and mobile_no → find duplicates (more than 1 visit)
-            revisit_groups = (
-                queryset
-                .values('hospital', 'mobile_no')
-                .annotate(visit_count=Count('id'))
-                .filter(visit_count__gt=1)
-            )
-            total_revisits = revisit_groups.count()
-
-        
-            revisit_conversion_rate = (total_revisits / unique_patients * 100) if unique_patients else 0
-
+            report_type = inputdict.get('report_type', 'detailed')
             
-            try:
-                call_cc=CallFeedbackModel.objects.filter(
-                patient__hospital=user_id,
-                called_at__date__gte=start_date,
-                called_at__date__lte=end_date,
-                call_status='connected'
-            ).values('patient').distinct().count()
-                connected_people_rate = np.round((call_cc/connected_data)*100,2)
-            except Exception as e:
-                connected_people_rate=0
-            try:
-                community_members_rate=community_members/connected_data
-                community_members_rate=np.round(community_members_rate*100,2)
-            except Exception as e:
-                community_members_rate=0
-            dict_obj['{{call_patients}}']=connected_data
-            dict_obj['{{call_answer_rate}}']=connected_people_rate
-            dict_obj['{{community_added}}']=community_members
-            dict_obj['{{community_conversion_rate}}']=community_members_rate
-            dict_obj['{{poll_number}}']=poll_participants
-            dict_obj['{{escalation_number}}']=total_escalations
-            dict_obj['{{revisit_conversion_rate}}']=revisit_conversion_rate
-            dict_obj['{{revisit_number}}']=total_revisits
-            dict_obj['{{call_connected}}']=call_cc
+            # Key Outcome Placeholders (Table 1)
+            dict_obj['{{total_interactions}}'] = interactions_card['value']
+            dict_obj['{{avg_resolution}}'] = resolution_card['value']
+            dict_obj['{{conversion_rate}}'] = conversion_card['value']
+            dict_obj['{{no_show_rate}}'] = noshow_card['value']
             
+            # Financial & ROI (Tables 3A, 3B, 3C)
+            # Assuming these placeholders exist in the template
+            dict_obj['{{rev_influenced}}'] = revenue_card['value']
             
-            dict_obj['{{call_p}}']=connected_data
-            dict_obj['{{calla_c}}']=connected_people_rate
-            dict_obj['{{com_c}}']=community_members
-            dict_obj['{{coma_c}}']=community_members_rate
-            dict_obj['{{poll_number}}']=poll_participants
-            dict_obj['{{ess_c}}']=total_escalations
-            dict_obj['{{reva_c}}']=revisit_conversion_rate
-            dict_obj['{{rev_c}}']=total_revisits
-            dict_obj['{{call_c}}']=call_cc
+            if report_type == 'only_metrics':
+                # Clear text-heavy placeholders if we are in 'Only Metrics' mode
+                dict_obj['{{summary}}'] = ""
+                dict_obj['{{analysis}}'] = ""
+                dict_obj['{{recommendations}}'] = ""
+                template_filename = "Amor-Hospitals-Metrics-Only.docx"
+            else:
+                template_filename = "Amor-Hospitals-May-2025-PTS-Report.docx"
             
             sheet_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-            docx_path=os.path.join(sheet_path,"Amor-Hospitals-May-2025-PTS-Report.docx")
+            docx_path = os.path.join(sheet_path, template_filename)
+            
+            if not os.path.exists(docx_path):
+                docx_path = os.path.join(sheet_path, "Amor-Hospitals-May-2025-PTS-Report.docx")
             # Generate UUID
             unique_id = uuid.uuid4()
 
