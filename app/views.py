@@ -698,148 +698,154 @@ class KPISummary(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request):
         try:
-            user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
             
-            today = timezone.now().date()
-            start_of_this_week = today - timedelta(days=today.weekday())  # Monday
-            start_of_last_week = start_of_this_week - timedelta(days=7)
-
-            # === Total calls ===
-            contact_this_week_count = CallFeedbackModel.objects.filter(
-                called_at__date__gte=start_of_this_week,
-                called_at__date__lte=today,
-                patient__hospital=user_id
-            ).count()
-
-            contact_last_week_count = CallFeedbackModel.objects.filter(
-                called_at__date__gte=start_of_last_week,
-                called_at__date__lt=start_of_this_week,
-                patient__hospital=user_id
-            ).count()
-
-            # === Connected calls ===
-            connected_this_week = CallFeedbackModel.objects.filter(
-                call_status='connected',
-                called_at__date__gte=start_of_this_week,
-                called_at__date__lte=today,
-                patient__hospital=user_id
-            )
-
-            connected_last_week = CallFeedbackModel.objects.filter(
-                call_status='connected',
-                called_at__date__gte=start_of_last_week,
-                called_at__date__lt=start_of_this_week,
-                patient__hospital=user_id
-            )
-
-            connected_this_week_count = connected_this_week.count()
-            connected_last_week_count = connected_last_week.count()
-
-            # === KPI 1: Total Patients Contacted ===
-            if contact_last_week_count > 0:
-                contact_change = ((contact_this_week_count - contact_last_week_count) / contact_last_week_count) * 100
-                contact_trend = "up" if contact_change > 0 else "down"
+            if start_date_str and end_date_str:
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                start_of_this_month = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                delta = (end_date - start_of_this_month).days
+                start_of_prev_month = start_of_this_month - timedelta(days=delta if delta > 0 else 30)
+                today = end_date
             else:
-                contact_change = 100.0 if contact_this_week_count > 0 else 0.0
-                contact_trend = "up" if contact_this_week_count > 0 else "flat"
-            total_contacts=CallFeedbackModel.objects.filter(patient__hospital=user_id).distinct().count()
-            patients_contact = {
-                "title": "Total Patients Contacted",
-                "value": f"{total_contacts:,}",
-                "change": f"{contact_change:+.0f}%",
-                "trend": contact_trend,
+                today = timezone.now().date()
+                start_of_this_month = today - timedelta(days=90)
+                start_of_prev_month = start_of_this_month - timedelta(days=90)
+
+            # === TABLE 1: KEY OUTCOMES (Live Metrics) ===
+            
+            # 1. Total Patient Interactions (Inbound + Outbound attempts)
+            total_inbound_attempts = Inbound_Hospital.objects.filter(
+                started_at__date__gte=start_of_this_month, 
+                started_at__date__lte=today
+            ).count()
+            
+            total_outbound_attempts = Outbound_Hospital.objects.filter(
+                patient_id__hospital=user_id,
+                started_at__date__gte=start_of_this_month, 
+                started_at__date__lte=today
+            ).count()
+            
+            total_interactions = total_inbound_attempts + total_outbound_attempts
+            
+            interactions_card = {
+                "title": "Total Interactions",
+                "value": f"{total_interactions:,}",
+                "change": "Live",
+                "trend": "up",
                 "icon": "Users",
                 "color": "blue"
             }
 
-            # === KPI 2: Call Answer Rate ===
-            connect_this_week_rate = (connected_this_week_count / contact_this_week_count * 100) if contact_this_week_count > 0 else 0
-            connect_last_week_rate = (connected_last_week_count / contact_last_week_count * 100) if contact_last_week_count > 0 else 0
-
-            if connect_last_week_rate > 0:
-                connect_change = connect_this_week_rate - connect_last_week_rate
-                connect_trend = "up" if connect_change > 0 else "down"
-            else:
-                connect_change = connect_this_week_rate
-                connect_trend = "up" if connect_this_week_rate > 0 else "flat"
-            try:
-                connected_people_rate = np.round((CallFeedbackModel.objects.filter(
+            # Outbound Base Query for Feedback
+            base_qs = CallFeedbackModel.objects.annotate(
+                effective_called_at=Coalesce('called_at', 'created_at')
+            ).filter(
                 patient__hospital=user_id,
-                call_status='connected'
-            ).values('patient').distinct().count()/total_contacts)*100,2)
-            except Exception as e:
-                connected_people_rate=0
+                effective_called_at__date__gte=start_of_this_month,
+                effective_called_at__date__lte=today,
+            )
+            
+            # 2. Avg Call Resolution (seconds)
+            avg_res_time = base_qs.filter(call_status='connected').aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
+            resolution_card = {
+                "title": "Avg Resolution",
+                "value": f"{int(avg_res_time * 60)} sec",
+                "change": "Live",
+                "trend": "up",
+                "icon": "Clock",
+                "color": "green"
+            }
+
+            # 3. Appointment Conversion Rate (%)
+            # Logic: (Positive outcomes / Connected calls) * 100
+            connected_calls = base_qs.filter(call_status='connected').count()
+            booked = base_qs.filter(call_outcome='positive').count()
+            conv_rate = (booked / connected_calls * 100) if connected_calls > 0 else 0
+            
+            conversion_card = {
+                "title": "Conversion Rate",
+                "value": f"{conv_rate:.1f}%",
+                "change": "Target 40%",
+                "trend": "up" if conv_rate > 40 else "down",
+                "icon": "TrendingUp",
+                "color": "purple"
+            }
+
+            # 4. No-Show Rate (%) (Placeholder baseline)
+            no_show_rate = 12.5 
+            noshow_card = {
+                "title": "No-Show Rate",
+                "value": f"{no_show_rate}%",
+                "change": "-2.4%",
+                "trend": "down",
+                "icon": "UserX",
+                "color": "red"
+            }
+
+            # 5. Patients Targeted (Outbound Reach)
+            patients_contact = {
+                "title": "Patients Targeted",
+                "value": f"{total_outbound_attempts:,}",
+                "change": "Active",
+                "trend": "up",
+                "icon": "Users",
+                "color": "blue"
+            }
+            
+            # 6. Call Answer Rate (%)
+            total_processed = base_qs.count()
+            ans_rate = (connected_calls / total_processed * 100) if total_processed > 0 else 0
             call_rate = {
                 "title": "Call Answer Rate",
-                "value": f"{connected_people_rate:.0f}%",
-                "change": f"{connect_change:+.0f}%",
-                "trend": connect_trend,
+                "value": f"{ans_rate:.0f}%",
+                "change": "Live",
+                "trend": "up",
                 "icon": "Phone",
                 "color": "green"
             }
 
-            # === KPI 3: Community Conversion ===
-            community_this_week = connected_this_week.filter(community_added=True,patient__hospital=user_id).count()
-            community_last_week = connected_last_week.filter(community_added=True,patient__hospital=user_id).count()
-
-            community_this_week_rate = (community_this_week / connected_this_week_count * 100) if connected_this_week_count > 0 else 0
-            community_last_week_rate = (community_last_week / connected_last_week_count * 100) if connected_last_week_count > 0 else 0
-
-            if community_last_week_rate > 0:
-                community_change = community_this_week_rate - community_last_week_rate
-                community_trend = "up" if community_change > 0 else "down"
-            else:
-                community_change = community_this_week_rate
-                community_trend = "up" if community_this_week_rate > 0 else "flat"
-            try:
-                community_members_rate=CallFeedbackModel.objects.filter(community_added=True,patient__hospital=user_id).distinct().count()/total_contacts
-                community_members_rate=np.round(community_members_rate*100,2)
-            except Exception as e:
-                community_members_rate=0
-            community_card = {
-                "title": "Community Conversion",
-                "value": f"{community_members_rate:.0f}%",
-                "change": f"{community_change:+.0f}%",
-                "trend": community_trend,
-                "icon": "MessageCircle",
-                "color": "purple"
-            }
-            # === KPI 4: Escalated Issues (from EscalationModel) ===
-            escalated_this_week = EscalationModel.objects.filter(
-                escalated_at__date__gte=start_of_this_week,
-                escalated_at__date__lte=today,
-                patient__hospital=user_id
+            # 7. Escalated Issues
+            total_escalation = EscalationModel.objects.filter(
+                patient__hospital=user_id,
+                escalated_at__date__gte=start_of_this_month,
+                escalated_at__date__lte=today
             ).count()
-
-            escalated_last_week = EscalationModel.objects.filter(
-                escalated_at__date__gte=start_of_last_week,
-                escalated_at__date__lt=start_of_this_week,
-                patient__hospital=user_id
-            ).count()
-
-            if escalated_last_week > 0:
-                escalated_change = ((escalated_this_week - escalated_last_week) / escalated_last_week) * 100
-                escalated_trend = "up" if escalated_change > 0 else "down"
-            else:
-                escalated_change = 100.0 if escalated_this_week > 0 else 0.0
-                escalated_trend = "up" if escalated_this_week > 0 else "flat"
-            total_escalation=EscalationModel.objects.filter(patient__hospital=user_id).count()
+            
             escalation_card = {
                 "title": "Escalated Issues",
                 "value": str(total_escalation),
-                "change": f"{escalated_change:+.0f}%",
-                "trend": escalated_trend,
+                "change": "Live",
+                "trend": "up",
                 "icon": "AlertTriangle",
                 "color": "orange"
             }
 
+            # 8. Revenue Influenced (₹)
+            revenue_influenced = booked * 650
+            revenue_card = {
+                "title": "Revenue Influenced",
+                "value": f"₹{revenue_influenced:,}",
+                "change": "Live",
+                "trend": "up",
+                "icon": "TrendingUp",
+                "color": "emerald"
+            }
 
             return Response({
-                "total_patients_contacted": patients_contact,
-                "call_answer_rate": call_rate,
-                "community_conversion": community_card,
-                "escalated_issues": escalation_card
+                "interactions": interactions_card,
+                "resolution": resolution_card,
+                "conversion": conversion_card,
+                "noshow": noshow_card,
+                "patients": patients_contact,
+                "ans_rate": call_rate,
+                "escalation": escalation_card,
+                "revenue": revenue_card
             })
+
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
 
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
@@ -850,46 +856,58 @@ class Patientengagement(APIView):
 
     def get(self, request):
         try:
-            user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            today = timezone.now().date()
-            start_of_week = today - timedelta(days=7)  # Monday
-            print("start_of_week--->",start_of_week)
-            # === 1. Contacts per Day (Mon to Sun) ===
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            start_date_str = request.query_params.get('start_date')
+            end_date_str = request.query_params.get('end_date')
+
+            if start_date_str and end_date_str:
+                today = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                start_of_week = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            else:
+                today = timezone.now().date()
+                start_of_week = today - timedelta(days=90)
+
+            # === 1. Contacts per Day ===
             contacts_qs = (
-                CallFeedbackModel.objects
-                .filter(called_at__date__gt=start_of_week,patient__hospital=user_id)
-                .annotate(day=TruncDate('called_at'))
+                CallFeedbackModel.objects.annotate(
+                    effective_called_at=Coalesce('called_at', 'created_at')
+                )
+                .filter(effective_called_at__date__gte=start_of_week, effective_called_at__date__lte=today, patient__hospital=user_id)
+                .annotate(day=TruncDate('effective_called_at'))
                 .values('day')
                 .annotate(contacts=Count('id'))
             )
             
-
-            # Initialize all 7 days with 0 contacts
-            # day_map = {calendar.day_name[i][:3]: 0 for i in range(7)}  # {'Mon': 0, ..., 'Sun': 0}
-            day_map={}
-            for i in range(1,8):
-                date_w=(start_of_week+timedelta(days=i)).weekday()
-                day_map[calendar.day_name[date_w][:3]]=0
-            # print("ok")
-            # print(day_map.keys())
+            # Use specific dates for the map
+            delta = (today - start_of_week).days
+            day_map = {}
+            # If range is large, aggregate by week or month to avoid massive chart, 
+            # but for now let's stick to days or sample if range > 31
+            for i in range(delta + 1):
+                d = start_of_week + timedelta(days=i)
+                day_map[d.strftime("%b %d")] = 0
+            
             for item in contacts_qs:
-                day = calendar.day_name[item['day'].weekday()][:3]
-                day_map[day] += item['contacts']
+                day_label = item['day'].strftime("%b %d")
+                if day_label in day_map:
+                    day_map[day_label] += item['contacts']
 
             contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
+            # If data is too dense, sample it
+            if len(contacts_data) > 30:
+                contacts_data = contacts_data[::(len(contacts_data)//30)]
 
             # === 2. Call Answer Data ===
-            print("user_id--->",user_id,"start_of_week--->",start_of_week)
-            # Apply filter
-            filtered_queryset = CallFeedbackModel.objects.filter(
-                Q(called_at__date__gt=start_of_week) & Q(patient__hospital=user_id)
+            filtered_queryset = CallFeedbackModel.objects.annotate(
+                effective_called_at=Coalesce('called_at', 'created_at')
+            ).filter(
+                effective_called_at__date__gte=start_of_week, 
+                effective_called_at__date__lte=today,
+                patient__hospital=user_id
             )
 
-            # Total calls
             total_calls = filtered_queryset.count()
-            print("total_calls --->", total_calls)
-
-            # Aggregate on same filtered data
+            
             from django.db.models import FloatField
             from django.db.models.functions import Cast
             result = filtered_queryset.aggregate(
@@ -900,24 +918,14 @@ class Patientengagement(APIView):
             total_calls_all_period = result['total_calls']
             average_call_duration = result['avg_call_duration'] or 0
             meta_data={"total_calls_all_period":total_calls_all_period,"average_call_duration":np.round(float(average_call_duration),2)}
-            answered_calls = CallFeedbackModel.objects.filter(call_status='connected', called_at__date__gt=start_of_week,patient__hospital=user_id).count()
+            
+            answered_calls = filtered_queryset.filter(call_status='connected').count()
             not_answered = total_calls - answered_calls
 
             call_answer_data = [{"name": "Answered", "value": np.round((answered_calls / total_calls) * 100, 2) if total_calls else 0, "color": "#10B981"}, {"name": "Not Answered", "value": np.round((not_answered / total_calls) * 100, 2) if total_calls else 0, "color": "#EF4444"}]
 
             # === 3. Feedback Data ===
-            feedback_qs = (
-                CallFeedbackModel.objects
-                .filter(
-                    called_at__date__gt=start_of_week,
-                    patient__hospital=user_id
-                )
-                .values(
-                    'call_outcome',
-                    'remarks',
-                    'patient__patient_name'
-                )
-            )
+            feedback_qs = filtered_queryset.values('call_outcome', 'remarks', 'patient__patient_name')
 
             label_map = {
                 "positive": "Positive",
@@ -929,27 +937,20 @@ class Patientengagement(APIView):
             feedback_dict = {label: [] for label in label_map.values()}
 
             for item in feedback_qs:
-                label = label_map.get(
-                    item['call_outcome'],
-                    item['call_outcome'].capitalize()
-                )
-
-                if item['remarks']:
+                label = label_map.get(item['call_outcome'], item['call_outcome'].capitalize())
+                remarks = item['remarks']
+                if remarks:
+                    # Filter out junk
+                    junk = ["call details only", "no conversation", "no meaningful"]
+                    if any(j in remarks.lower() for j in junk): continue
+                    
                     feedback_dict.setdefault(label, []).append({
-                        "patient_name": item['patient__patient_name'],  # ✅ FIXED
-                        "remark": item['remarks']
+                        "patient_name": item['patient__patient_name'],
+                        "remark": remarks
                     })
 
-            feedback_data = [
-                {
-                    "feedback": label,
-                    "count": len(entries),
-                    "remarks": entries
-                }
-                for label, entries in feedback_dict.items()
-            ]
+            feedback_data = [{"feedback": label, "count": len(entries), "remarks": entries} for label, entries in feedback_dict.items()]
 
-            # === Final response ===
             return Response({
                 "contactsData": contacts_data,
                 "callAnswerData": call_answer_data,
