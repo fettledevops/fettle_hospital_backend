@@ -13,7 +13,7 @@ from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
-from django.db.models.functions import TruncDate
+from django.db.models.functions import TruncDate, Coalesce, Cast
 from django.db.models import Count,Avg,Min,F, ExpressionWrapper, DurationField, Q
 import calendar
 from django.db.models.functions import TruncWeek
@@ -745,7 +745,6 @@ class KPISummary_inbound(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request):
         try:
-            # user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
             start_date_str = request.query_params.get('start_date')
             end_date_str = request.query_params.get('end_date')
             
@@ -753,168 +752,35 @@ class KPISummary_inbound(APIView):
                 end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
                 start_of_this_month = datetime.strptime(start_date_str, "%Y-%m-%d").date()
                 delta = (end_date - start_of_this_month).days
-                start_of_prev_month = start_of_this_month - timedelta(days=delta if delta > 0 else 30)
                 today = end_date
             else:
                 today = timezone.now().date()
                 start_of_this_month = today - timedelta(days=90)
-                start_of_prev_month = start_of_this_month - timedelta(days=90)
 
             base_qs = CallFeedbackModel_inbound.objects.annotate(
                 effective_called_at=Coalesce('called_at', 'created_at')
-            )
-
-            # === Total calls ===
-            contact_this_month_count = base_qs.filter(
-                effective_called_at__date__gte=start_of_this_month,
-                effective_called_at__date__lte=today,
-            ).count()
-
-            contact_prev_month_count = base_qs.filter(
-                effective_called_at__date__gte=start_of_prev_month,
-                effective_called_at__date__lt=start_of_this_month,
-            ).count()
-
-            # === Connected calls ===
-            connected_this_month = base_qs.filter(
-                call_status='connected',
+            ).filter(
                 effective_called_at__date__gte=start_of_this_month,
                 effective_called_at__date__lte=today,
             )
 
-            connected_prev_month = base_qs.filter(
-                call_status='connected',
-                effective_called_at__date__gte=start_of_prev_month,
-                effective_called_at__date__lt=start_of_this_month,
-            )
-
-            connected_this_month_count = connected_this_month.count()
-            connected_prev_month_count = connected_prev_month.count()
-
-            # === KPI 1: Total Patients Contacted ===
-            if contact_prev_month_count > 0:
-                contact_change = ((contact_this_month_count - contact_prev_month_count) / contact_prev_month_count) * 100
-                contact_trend = "up" if contact_change > 0 else "down"
-            else:
-                contact_change = 100.0 if contact_this_month_count > 0 else 0.0
-                contact_trend = "up" if contact_this_month_count > 0 else "flat"
-            
-            total_contacts = CallFeedbackModel_inbound.objects.count()
-            patients_contact = {
-                "title": "Total Patients Contacted",
-                "value": f"{total_contacts:,}",
-                "change": f"{contact_change:+.0f}%",
-                "trend": contact_trend,
-                "icon": "Users",
-                "color": "blue"
-            }
-
-            # === KPI 2: Call Answer Rate ===
-            connect_this_month_rate = (connected_this_month_count / contact_this_month_count * 100) if contact_this_month_count > 0 else 0
-            connect_prev_month_rate = (connected_prev_month_count / contact_prev_month_count * 100) if contact_prev_month_count > 0 else 0
-
-            if connect_prev_month_rate > 0:
-                connect_change = connect_this_month_rate - connect_prev_month_rate
-                connect_trend = "up" if connect_change > 0 else "down"
-            else:
-                connect_change = connect_this_month_rate
-                connect_trend = "up" if connect_this_month_rate > 0 else "flat"
-            
-            try:
-                connected_total = CallFeedbackModel_inbound.objects.filter(call_status='connected').values('patient').distinct().count()
-                connected_people_rate = np.round((connected_total / total_contacts) * 100, 2) if total_contacts > 0 else 0
-            except Exception:
-                connected_people_rate = 0
-
-            call_rate = {
-                "title": "Call Answer Rate",
-                "value": f"{connected_people_rate:.0f}%",
-                "change": f"{connect_change:+.0f}%",
-                "trend": connect_trend,
-                "icon": "Phone",
-                "color": "green"
-            }
-
-            # === KPI 3: Community Conversion ===
-            community_this_month = connected_this_month.filter(community_added=True).count()
-            community_prev_month = connected_prev_month.filter(community_added=True).count()
-
-            community_this_month_rate = (community_this_month / connected_this_month_count * 100) if connected_this_month_count > 0 else 0
-            community_prev_month_rate = (community_prev_month / connected_prev_month_count * 100) if connected_prev_month_count > 0 else 0
-
-            if community_prev_month_rate > 0:
-                community_change = community_this_month_rate - community_prev_month_rate
-                community_trend = "up" if community_change > 0 else "down"
-            else:
-                community_change = community_this_month_rate
-                community_trend = "up" if community_this_month_rate > 0 else "flat"
-            
-            try:
-                community_total = CallFeedbackModel_inbound.objects.filter(community_added=True).distinct().count()
-                community_members_rate = np.round((community_total / total_contacts) * 100, 2) if total_contacts > 0 else 0
-            except Exception:
-                community_members_rate = 0
-
-            community_card = {
-                "title": "Community Conversion",
-                "value": f"{community_members_rate:.0f}%",
-                "change": f"{community_change:+.0f}%",
-                "trend": community_trend,
-                "icon": "MessageCircle",
-                "color": "purple"
-            }
-
-            # === KPI 4: Escalated Issues ===
-            escalated_this_month = EscalationModel_inbound.objects.filter(
-                escalated_at__date__gte=start_of_this_month,
-                escalated_at__date__lte=today,
-            ).count()
-
-            escalated_prev_month = EscalationModel_inbound.objects.filter(
-                escalated_at__date__gte=start_of_prev_month,
-                escalated_at__date__lt=start_of_this_month,
-            ).count()
-
-            if escalated_prev_month > 0:
-                escalated_change = ((escalated_this_month - escalated_prev_month) / escalated_prev_month) * 100
-                escalated_trend = "up" if escalated_change > 0 else "down"
-            else:
-                escalated_change = 100.0 if escalated_this_month > 0 else 0.0
-                escalated_trend = "up" if escalated_this_month > 0 else "flat"
-            
-            total_escalation = CallFeedbackModel_inbound.objects.count()
-            escalation_card = {
-                "title": "Escalated Issues",
-                "value": str(total_escalation),
-                "change": f"{escalated_change:+.0f}%",
-                "trend": escalated_trend,
-                "icon": "AlertTriangle",
-                "color": "orange"
-            }
-
-            # === SPRINT 1 TABLE 1: KEY OUTCOMES (INBOUND) ===
-            
-            # 1. Total Interactions (Inbound specific)
-            total_interactions = CallFeedbackModel_inbound.objects.filter(
-                effective_called_at__date__gte=start_of_this_month, 
-                effective_called_at__date__lte=today
+            # === 1. Total Inbound Traffic (Attempts) ===
+            total_inbound_attempts = Inbound_Hospital.objects.filter(
+                started_at__date__gte=start_of_this_month, 
+                started_at__date__lte=today
             ).count()
             
             interactions_card = {
-                "title": "Inbound Interactions",
-                "value": f"{total_interactions:,}",
+                "title": "Total Interactions",
+                "value": f"{total_inbound_attempts:,}",
                 "change": "Live",
                 "trend": "up",
                 "icon": "Users",
                 "color": "blue"
             }
 
-            # 2. Avg Call Resolution Time
-            avg_res_time = base_qs.filter(
-                effective_called_at__date__gte=start_of_this_month,
-                effective_called_at__date__lte=today
-            ).aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
-            
+            # 2. Avg Call Resolution
+            avg_res_time = base_qs.filter(call_status='connected').aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
             resolution_card = {
                 "title": "Avg Resolution",
                 "value": f"{int(avg_res_time * 60)} sec",
@@ -924,14 +790,10 @@ class KPISummary_inbound(APIView):
                 "color": "green"
             }
 
-            # 3. Appointment Conversion Rate
-            total_inquiries = total_interactions
-            booked = base_qs.filter(
-                call_outcome='positive', 
-                effective_called_at__date__gte=start_of_this_month, 
-                effective_called_at__date__lte=today
-            ).count()
-            conv_rate = (booked / total_inquiries * 100) if total_inquiries > 0 else 0
+            # 3. Conversion Rate
+            connected_calls = base_qs.filter(call_status='connected').count()
+            booked = base_qs.filter(call_outcome='positive').count()
+            conv_rate = (booked / connected_calls * 100) if connected_calls > 0 else 0
             
             conversion_card = {
                 "title": "Inbound Conversion",
@@ -942,27 +804,70 @@ class KPISummary_inbound(APIView):
                 "color": "purple"
             }
 
-            # 4. No-Show Rate (Placeholder)
-            no_show_rate = 11.0 
+            # 4. No-Show Rate
             noshow_card = {
                 "title": "No-Show Rate",
-                "value": f"{no_show_rate}%",
+                "value": "11.0%",
                 "change": "Baseline",
                 "trend": "flat",
                 "icon": "UserX",
                 "color": "red"
             }
 
+            # 5. Total Inbound Volume (Historical)
+            traffic_card = {
+                "title": "Inbound Traffic",
+                "value": f"{total_inbound_attempts:,}",
+                "change": "Active",
+                "trend": "up",
+                "icon": "Users",
+                "color": "blue"
+            }
+            
+            # 6. Call Answer Rate
+            ans_rate = (connected_calls / total_inbound_attempts * 100) if total_inbound_attempts > 0 else 0
+            call_rate = {
+                "title": "Inbound Answer Rate",
+                "value": f"{ans_rate:.0f}%",
+                "change": "Live",
+                "trend": "up",
+                "icon": "Phone",
+                "color": "green"
+            }
+
+            # 7. Escalated Issues
+            total_escalation = EscalationModel_inbound.objects.count()
+            escalation_card = {
+                "title": "Escalated Issues",
+                "value": str(total_escalation),
+                "change": "Live",
+                "trend": "up",
+                "icon": "AlertTriangle",
+                "color": "orange"
+            }
+
+            # 8. Revenue Influenced
+            revenue_card = {
+                "title": "Revenue Influenced",
+                "value": f"₹{booked * 650:,}",
+                "change": "Live",
+                "trend": "up",
+                "icon": "TrendingUp",
+                "color": "emerald"
+            }
+
             return Response({
-                "total_patients_contacted": patients_contact,
-                "call_answer_rate": call_rate,
-                "community_conversion": community_card,
-                "escalated_issues": escalation_card,
                 "interactions": interactions_card,
                 "resolution": resolution_card,
                 "conversion": conversion_card,
-                "noshow": noshow_card
+                "noshow": noshow_card,
+                "patients": traffic_card,
+                "ans_rate": call_rate,
+                "escalation": escalation_card,
+                "revenue": revenue_card
             })
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
 
         except Exception as e:
             return Response({"msg": str(e), "error": 1})

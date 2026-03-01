@@ -12,7 +12,7 @@ from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
-from django.db.models.functions import TruncDate
+from django.db.models.functions import TruncDate, Coalesce, Cast
 from django.db.models import Count,Avg,Min,F, ExpressionWrapper, DurationField, Q
 import calendar
 from django.db.models.functions import TruncWeek
@@ -847,9 +847,6 @@ class KPISummary(APIView):
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
-        except Exception as e:
-            return Response({"msg": str(e), "error": 1})
-
 
 class Patientengagement(APIView):
     authentication_classes = [JWTAuthentication]
@@ -867,37 +864,39 @@ class Patientengagement(APIView):
                 today = timezone.now().date()
                 start_of_week = today - timedelta(days=90)
 
-            # === 1. Contacts per Day ===
+            # === 1. Contacts per Day (Raw Attempts) ===
             contacts_qs = (
-                CallFeedbackModel.objects.annotate(
-                    effective_called_at=Coalesce('called_at', 'created_at')
+                Outbound_Hospital.objects.filter(
+                    patient_id__hospital=user_id,
+                    started_at__date__gte=start_of_week, 
+                    started_at__date__lte=today
                 )
-                .filter(effective_called_at__date__gte=start_of_week, effective_called_at__date__lte=today, patient__hospital=user_id)
-                .annotate(day=TruncDate('effective_called_at'))
+                .annotate(day=TruncDate('started_at'))
                 .values('day')
                 .annotate(contacts=Count('id'))
             )
             
-            # Use specific dates for the map
             delta = (today - start_of_week).days
             day_map = {}
-            # If range is large, aggregate by week or month to avoid massive chart, 
-            # but for now let's stick to days or sample if range > 31
+            # Use unique date keys and year-aware labels for large ranges
             for i in range(delta + 1):
                 d = start_of_week + timedelta(days=i)
-                day_map[d.strftime("%b %d")] = 0
+                label_fmt = "%b %d" if delta < 365 else "%b %d, %y"
+                day_map[d.strftime("%Y-%m-%d")] = {"label": d.strftime(label_fmt), "count": 0}
             
             for item in contacts_qs:
-                day_label = item['day'].strftime("%b %d")
-                if day_label in day_map:
-                    day_map[day_label] += item['contacts']
+                if item['day']:
+                    day_key = item['day'].strftime("%Y-%m-%d")
+                    if day_key in day_map:
+                        day_map[day_key]["count"] += item['contacts']
 
-            contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
-            # If data is too dense, sample it
-            if len(contacts_data) > 30:
-                contacts_data = contacts_data[::(len(contacts_data)//30)]
+            contacts_data = [{"date": v["label"], "contacts": v["count"]} for k, v in sorted(day_map.items())]
+            if len(contacts_data) > 31:
+                # Sample the data to avoid overcrowding the chart
+                step = len(contacts_data) // 31
+                contacts_data = contacts_data[::step]
 
-            # === 2. Call Answer Data ===
+            # === 2. Call Answer Data (Processed Feedback) ===
             filtered_queryset = CallFeedbackModel.objects.annotate(
                 effective_called_at=Coalesce('called_at', 'created_at')
             ).filter(
