@@ -45,7 +45,7 @@ class JWTAuthentication(BaseAuthentication):
             Response['error'] = 100
             raise AuthenticationFailed(Response)
 
-        return payload.get('name'), TokenString
+        return payload.get('email'), TokenString
     
 class JWTAuthenticationUrl(BaseAuthentication):
     def authenticate(self, request):
@@ -74,4 +74,4 @@ class JWTAuthenticationUrl(BaseAuthentication):
             raise AuthenticationFailed(Response)
         
 
-        return payload.get('name'), TokenString
+        return payload.get('email'), TokenString
