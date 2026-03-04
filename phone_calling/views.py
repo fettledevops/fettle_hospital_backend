@@ -72,36 +72,42 @@ class Outbound_call(APIView):
             start_date_str = payload.get('start_date')
             end_date_str = payload.get('end_date')
             unconnected_only = payload.get('unconnected_only', False)
+            is_individual = payload.get('individual', False)
+            target_patient_id = payload.get('patient_id')
 
-            # Find mobile numbers that have successfully connected at least once
-            connected_mobile_qs = (
-                Outbound_Hospital.objects
-                .filter(calling_process='connected')
-                .values('patient_id__mobile_no')
-                .distinct()
-            )
+            if is_individual and target_patient_id:
+                patients = Patient_model.objects.filter(id=target_patient_id)
+            else:
+                # Find mobile numbers that have successfully connected at least once
+                connected_mobile_qs = (
+                    Outbound_Hospital.objects
+                    .filter(calling_process='connected')
+                    .values('patient_id__mobile_no')
+                    .distinct()
+                )
 
-            patients_query = (
-                Patient_model.objects
-                .select_related('hospital')
-                .filter(hospital_id__in=hospital_ids)
-            )
+                patients_query = (
+                    Patient_model.objects
+                    .select_related('hospital')
+                    .filter(hospital_id__in=hospital_ids)
+                )
 
-            if unconnected_only:
-                patients_query = patients_query.exclude(mobile_no__in=Subquery(connected_mobile_qs))
+                if unconnected_only:
+                    patients_query = patients_query.exclude(mobile_no__in=Subquery(connected_mobile_qs))
 
-            if start_date_str and end_date_str:
-                patients_query = patients_query.filter(uploaded_at__date__range=[start_date_str, end_date_str])
+                if start_date_str and end_date_str:
+                    patients_query = patients_query.filter(uploaded_at__date__range=[start_date_str, end_date_str])
 
-            patients = (
-                patients_query
-                .order_by('mobile_no', '-uploaded_at')
-                .distinct('mobile_no')
-            )
-            hospital_ids = {p.hospital.id for p in patients}
+                patients = (
+                    patients_query
+                    .order_by('mobile_no', '-uploaded_at')
+                    .distinct('mobile_no')
+                )
+            
+            hospital_ids_set = {p.hospital.id for p in patients}
             hospital_text_map = {
                 t.hospital_id: t.text
-                for t in TextModel.objects.filter(hospital_id__in=hospital_ids)
+                for t in TextModel.objects.filter(hospital_id__in=hospital_ids_set)
             }
 
             patient_data = [
@@ -117,21 +123,23 @@ class Outbound_call(APIView):
                     for p in patients
                 ]
 
-            # Create/Get Campaign Record
-            campaign_name = payload.get('campaign_name', 'Default Campaign')
-            campaign_id = payload.get('campaign_id')
-            
-            from app.models import Campaign
-            if campaign_id:
-                campaign_obj = Campaign.objects.get(id=campaign_id)
-            else:
-                campaign_obj = Campaign.objects.create(
-                    hospital=hospital_obj,
-                    name=campaign_name,
-                    start_date=datetime.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else None,
-                    end_date=datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None,
-                    unconnected_only=unconnected_only
-                )
+            # Create/Get Campaign Record (Skip for individual)
+            campaign_obj = None
+            if not is_individual:
+                campaign_name = payload.get('campaign_name', 'Default Campaign')
+                campaign_id = payload.get('campaign_id')
+                
+                from app.models import Campaign
+                if campaign_id:
+                    campaign_obj = Campaign.objects.get(id=campaign_id)
+                else:
+                    campaign_obj = Campaign.objects.create(
+                        hospital=hospital_obj,
+                        name=campaign_name,
+                        start_date=datetime.strptime(start_date_str, "%Y-%m-%d").date() if start_date_str else None,
+                        end_date=datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None,
+                        unconnected_only=unconnected_only
+                    )
 
             calling=[]
             for i in patient_data:
@@ -142,8 +150,8 @@ class Outbound_call(APIView):
                     "patient_name":i["patient_name"],
                     "hospital":i["hospital_name"],
                     "department":i["department"],
-                    "campaign_name": campaign_obj.name,
-                    "campaign_id": str(campaign_obj.id),
+                    "campaign_name": campaign_obj.name if campaign_obj else "Individual Call",
+                    "campaign_id": str(campaign_obj.id) if campaign_obj else None,
                     "language_policy": "Strictly ONLY English, Hindi, or Telugu. If the patient speaks any other language, politely end the call and mark as language_barrier."
                 }
                 

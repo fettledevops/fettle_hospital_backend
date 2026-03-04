@@ -13,10 +13,7 @@ from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
-from django.db.models.functions import TruncDate, Coalesce, Cast
-from django.db.models import Count,Avg,Min,F, ExpressionWrapper, DurationField, Q
-import calendar
-from django.db.models.functions import TruncWeek
+from django.db.models.functions import TruncDate, TruncWeek, TruncMonth, Coalesce, Cast
 from collections import OrderedDict
 from humanize import naturaltime
 from collections import defaultdict, Counter
@@ -59,32 +56,32 @@ class Patientengagement_inbound(APIView):
                 today = timezone.now().date()
                 start_of_week = today - timedelta(days=90)
 
-            # === 1. Contacts per Day (Raw Inbound Attempts) ===
-            contacts_qs = (
+            # === 1. Contacts per Period (Raw Inbound Attempts) ===
+            contacts_qs_base = (
                 Inbound_Hospital.objects
                 .filter(started_at__date__gte=start_of_week, started_at__date__lte=today)
-                .annotate(day=TruncDate('started_at'))
-                .values('day')
-                .annotate(contacts=Count('id'))
             )
             
-
-            # Initialize map for the window
-            delta_days = (today - start_of_week).days
-            day_map={}
-            for i in range(delta_days + 1):
-                date_w=(start_of_week + timedelta(days=i))
-                day_map[date_w.strftime("%b %d")]=0
+            delta = (today - start_of_week).days
+            contacts_data = []
             
-            for item in contacts_qs:
-                if item['day']:
-                    day_label = item['day'].strftime("%b %d")
-                    if day_label in day_map:
-                        day_map[day_label] += item['contacts']
-
-            contacts_data = [{"date": day, "contacts": count} for day, count in day_map.items()]
-            if len(contacts_data) > 31:
-                contacts_data = contacts_data[::(len(contacts_data)//31)]
+            if delta > 60:
+                # Aggregate by Month
+                period_qs = contacts_qs_base.annotate(period=TruncMonth('started_at')).values('period').annotate(contacts=Count('id')).order_by('period')
+                for item in period_qs:
+                    if item['period']:
+                        contacts_data.append({"date": item['period'].strftime("%b %Y"), "contacts": item['contacts']})
+            else:
+                # Aggregate by Day
+                period_qs = contacts_qs_base.annotate(period=TruncDate('started_at')).values('period').annotate(contacts=Count('id')).order_by('period')
+                day_map = { (start_of_week + timedelta(days=i)).strftime("%Y-%m-%d"): 0 for i in range(delta + 1) }
+                for item in period_qs:
+                    if item['period']:
+                        day_map[item['period'].strftime("%Y-%m-%d")] = item['contacts']
+                
+                for date_str, count in sorted(day_map.items()):
+                    d = datetime.strptime(date_str, "%Y-%m-%d")
+                    contacts_data.append({"date": d.strftime("%b %d"), "contacts": count})
 
             # === 2. Call Answer Data ===
             # Apply filter
