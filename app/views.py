@@ -1330,122 +1330,68 @@ class Allhospitals(APIView):
             return Response({"data": data, "error": 0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
+
 class PdfView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
         try:
             inputdict=request.data
             obj=Hospital_user_model.objects.get(id=request.user_id)
-            user_id = obj.hospital.id
-            hospital_name=obj.hospital.name
-            role = request.role
-            start_date=inputdict['start_date']
-            end_date=inputdict['end_date']
-
-            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-            end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            print("start_data---->",start_date)
-            print("end_date--->",end_date)
-            start_str = f"{get_ordinal(start_date.day)} {start_date.strftime('%B %Y')}"
-            end_str = f"{get_ordinal(end_date.day)} {end_date.strftime('%B %Y')}"
-            dict_obj={}
-            dict_obj['{{reporting_period}}']=f"{start_str} to {end_str}"
-            dict_obj['{{hospital_name}}']=hospital_name.title()
-            print("user_id---->",user_id)
-            connected_data = CallFeedbackModel.objects.filter(
-                    
-                    called_at__date__gte=start_date,
-                    called_at__date__lte=end_date,
-                    patient__hospital=user_id
-                ).distinct().count()
-            print("connected---->",connected_data)
-            community_members=CallFeedbackModel.objects.filter(called_at__date__gte=start_date,called_at__date__lte=end_date,community_added=True,patient__hospital=user_id).distinct().count()
-            poll_participants = CommunityEngagementModel.objects.filter(
-                    created_at__date__gte=start_date,created_at__date__lte=end_date,engagement_type='poll_participation',patient__hospital=user_id
-                ).values('patient').distinct().count()
-            total_escalations = EscalationModel.objects.filter(escalated_at__date__gte=start_date,escalated_at__date__lte=end_date,patient__hospital=user_id).count()
-            queryset = Patient_date_model.objects.filter(
-                date__range=(start_date, end_date),
-                hospital=user_id
-            )
-
-            # Count of unique (hospital, mobile_no) pairs
-            unique_patients = queryset.values('hospital', 'mobile_no').distinct().count()
-
-            # Group by hospital and mobile_no → find duplicates (more than 1 visit)
-            revisit_groups = (
-                queryset
-                .values('hospital', 'mobile_no')
-                .annotate(visit_count=Count('id'))
-                .filter(visit_count__gt=1)
-            )
-            total_revisits = revisit_groups.count()
-
-        
-            revisit_conversion_rate = (total_revisits / unique_patients * 100) if unique_patients else 0
-
+            user_id, hospital_name = obj.hospital.id, obj.hospital.name
+            start_date = datetime.strptime(inputdict['start_date'], "%Y-%m-%d").date()
+            end_date = datetime.strptime(inputdict['end_date'], "%Y-%m-%d").date()
             
-            try:
-                call_cc=CallFeedbackModel.objects.filter(
-                patient__hospital=user_id,
-                called_at__date__gte=start_date,
-                called_at__date__lte=end_date,
-                call_status='connected'
-            ).values('patient').distinct().count()
-                connected_people_rate = np.round((call_cc/connected_data)*100,2)
-            except Exception as e:
-                connected_people_rate=0
-            try:
-                community_members_rate=community_members/connected_data
-                community_members_rate=np.round(community_members_rate*100,2)
-            except Exception as e:
-                community_members_rate=0
-            dict_obj['{{call_patients}}']=connected_data
-            dict_obj['{{call_answer_rate}}']=connected_people_rate
-            dict_obj['{{community_added}}']=community_members
-            dict_obj['{{community_conversion_rate}}']=community_members_rate
-            dict_obj['{{poll_number}}']=poll_participants
-            dict_obj['{{escalation_number}}']=total_escalations
-            dict_obj['{{revisit_conversion_rate}}']=revisit_conversion_rate
-            dict_obj['{{revisit_number}}']=total_revisits
-            dict_obj['{{call_connected}}']=call_cc
+            # Recalculate metrics for placeholders (Table 1 logic)
+            base_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id, called_at__date__range=[start_date, end_date])
+            connected = base_qs.filter(call_status='connected')
+            booked = base_qs.filter(call_outcome='positive').count()
+            avg_res = connected.aggregate(avg=Avg(Cast('call_duration', FloatField())))['avg'] or 0
             
+            # Use Coalesce for interaction counts
+            total_outbound = Outbound_Hospital.objects.annotate(eff_date=Coalesce('started_at', 'created_at')).filter(patient_id__hospital=user_id, eff_date__date__range=[start_date, end_date]).count()
+            total_inbound = Inbound_Hospital.objects.annotate(eff_date=Coalesce('started_at', 'created_at')).filter(hospital_id=user_id, eff_date__date__range=[start_date, end_date]).count()
             
-            dict_obj['{{call_p}}']=connected_data
-            dict_obj['{{calla_c}}']=connected_people_rate
-            dict_obj['{{com_c}}']=community_members
-            dict_obj['{{coma_c}}']=community_members_rate
-            dict_obj['{{poll_number}}']=poll_participants
-            dict_obj['{{ess_c}}']=total_escalations
-            dict_obj['{{reva_c}}']=revisit_conversion_rate
-            dict_obj['{{rev_c}}']=total_revisits
-            dict_obj['{{call_c}}']=call_cc
+            dict_obj={
+                '{{reporting_period}}': f"{start_date} to {end_date}",
+                '{{hospital_name}}': hospital_name.title(),
+                '{{total_interactions}}': str(total_outbound + total_inbound),
+                '{{avg_resolution}}': f"{int(avg_res * 60)} sec",
+                '{{conversion_rate}}': f"{(booked/connected.count()*100 if connected.count() else 0):.1f}%",
+                '{{no_show_rate}}': "12.5%",
+                '{{rev_influenced}}': f"₹{booked * 650:,}",
+            }
             
-            sheet_path = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-            docx_path=os.path.join(sheet_path,"Amor-Hospitals-May-2025-PTS-Report.docx")
-            # Generate UUID
-            unique_id = uuid.uuid4()
-
-            # Get current timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # Build filename
-            folder_path=os.path.join(sheet_path,"files")
-            os.makedirs(folder_path,exist_ok=True)
-            filename = f"report_{user_id}_{unique_id}_{timestamp}.docx"
-            file_path=os.path.join(folder_path,filename)
-            replace_placeholders_in_docx_preserving_styles(docx_path,file_path,dict_obj)
-            resp= FileResponse(
-                open(file_path, 'rb'),
-                as_attachment=True,
-                filename=filename,
-                content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            report_type = inputdict.get('report_type', 'detailed')
+            if report_type == 'only_metrics':
+                # Aggressively clear all text-heavy placeholders
+                text_placeholders = [
+                    'summary', 'analysis', 'recommendations', 'introduction', 
+                    'conclusion', 'observation', 'patient_feedback_summary',
+                    'executive_summary', 'detailed_analysis'
+                ]
+                for p in text_placeholders:
+                    dict_obj[f'{{{{{p}}}}}'] = ""
                 
-            )
-            resp['Content-Disposition'] = f'attachment; filename="{filename}"'
-            return resp
+                template_filename = "Amor-Hospitals-Metrics-Only.docx"
+            else:
+                template_filename = "Amor-Hospitals-May-2025-PTS-Report.docx"
+            
+            sheet_path = os.path.dirname(os.path.abspath(__file__))
+            docx_path = os.path.join(sheet_path, template_filename)
+            
+            if not os.path.exists(docx_path):
+                docx_path = os.path.join(sheet_path, "Amor-Hospitals-May-2025-PTS-Report.docx")
+            
+            filename = f"report_{uuid.uuid4()}.docx"
+            file_path = os.path.join(sheet_path, "files", filename)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            replace_placeholders_in_docx_preserving_styles(docx_path, file_path, dict_obj)
+            
+            return FileResponse(open(file_path, 'rb'), as_attachment=True, filename=filename)
         except Exception as e:
             return Response({"error":1,"errorMsg":str(e)})
+
 class TextView(APIView):
     authentication_classes = [JWTAuthentication]
     def post(self,request):
@@ -1453,12 +1399,6 @@ class TextView(APIView):
             inputdict=request.data
             text=inputdict['text']
             user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            print("user_id-->",user_id)
-            hospital_name=request.email
-            print("hospital_name-->",hospital_name)
-            role = request.role
-            
-            # Get the Hospital_model instance
             hospital = Hospital_model.objects.get(id=user_id)
             TextModel.objects.update_or_create(hospital=hospital, text=text)
             return Response({"error":0,"msg":"Success"})
@@ -1467,42 +1407,202 @@ class TextView(APIView):
     def get(self,request):
         try:
             user_id= Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            hospital_name=request.email
-            role = request.role
             hospital = Hospital_model.objects.get(id=user_id)
             text=TextModel.objects.get(hospital=hospital)
-            print("text---->",text)
             return Response({"error":0,"msg":"Success","data":text.text})
         except Exception as e:
             return Response({"error":1,"msg":str(e)})
+
+class ROIMetrics(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            start_date, end_date = request.query_params.get('start_date'), request.query_params.get('end_date')
+            call_direction = request.query_params.get('call_direction', 'outbound')
+            
+            if call_direction == 'inbound':
+                attempts = Inbound_Hospital.objects.filter(hospital_id=user_id)
+                feedback_qs = CallFeedbackModel_inbound.objects.filter(patient__hospital_id=user_id)
+            else:
+                attempts = Outbound_Hospital.objects.filter(patient_id__hospital=user_id)
+                feedback_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
+
+            if start_date and end_date:
+                attempts = attempts.filter(started_at__date__range=[start_date, end_date])
+                feedback_qs = feedback_qs.filter(called_at__date__range=[start_date, end_date])
+            
+            booked_count = feedback_qs.filter(call_outcome='positive').count()
+            missed = attempts.filter(calling_process='not_connected').count()
+            total_dur = feedback_qs.aggregate(total=Sum(Cast('call_duration', FloatField())))['total'] or 0
+            
+            return Response({
+                "roi_financial": [
+                    {"name": "Interactions", "value": attempts.count(), "unit": ""},
+                    {"name": "Appointments Booked", "value": booked_count, "unit": ""},
+                    {"name": "Revenue Influenced", "value": booked_count * 650, "unit": "₹"},
+                    {"name": "Leakage Prevented", "value": int(missed * 0.42 * 650), "unit": "₹"}
+                ],
+                "roi_efficiency": [
+                    {"name": "Staff Hours Saved", "value": np.round(total_dur/60, 1), "unit": "hrs"},
+                    {"name": "Equivalent FTE Freed", "value": np.round(total_dur/6000, 2), "unit": "FTE"},
+                    {"name": "Cost Efficiency Value", "value": int(total_dur/6000 * 40000), "unit": "₹"}
+                ],
+                "error": 0
+            })
+        except Exception as e:
+            return Response({"error": 1, "msg": str(e)})
+
+class DepartmentAnalytics(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            call_direction = request.query_params.get('call_direction', 'outbound')
+            
+            if call_direction == 'inbound':
+                dept_qs = Inbound_Hospital.objects.filter(hospital_id=user_id).values('department').annotate(interactions=Count('id'))
+                feedback_qs = CallFeedbackModel_inbound.objects.filter(patient__hospital_id=user_id)
+                dept_field = 'department'
+            else:
+                dept_qs = Patient_model.objects.filter(hospital_id=user_id).values('department').annotate(interactions=Count('id'))
+                feedback_qs = CallFeedbackModel.objects.filter(patient__hospital=user_id)
+                dept_field = 'patient__department'
+
+            feedback_stats = feedback_qs.values(dept_field).annotate(bookings=Count('id', filter=Q(call_outcome='positive')))
+            feedback_map = {item[dept_field]: item for item in feedback_stats}
+            
+            formatted_data = []
+            for item in dept_qs:
+                dept = item.get('department') or item.get('patient__department') or "General"
+                stats = feedback_map.get(dept, {'bookings': 0})
+                interactions = item.get('interactions') or item.get('count') or 0
+                bookings = stats['bookings']
+                formatted_data.append({
+                    "department": dept,
+                    "interactions": interactions,
+                    "bookings": bookings,
+                    "conversion": f"{(bookings/interactions*100 if interactions else 0):.1f}%",
+                    "revenue": bookings * 650,
+                    "csat": 4.7
+                })
+            return Response({"department_table": formatted_data, "top_intents": [], "error": 0})
+        except Exception as e:
+            return Response({"error": 1, "msg": str(e)})
+
+class CampaignView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            campaigns = Campaign.objects.filter(hospital__hospital_user_model__id=request.user_id).order_by('-created_at')
+            data = [{
+                "id": str(c.id), "name": c.name, "template_type": c.template_type, "purpose": c.purpose, "status": c.status, "created_at": c.created_at,
+                "stats": {"total_calls": c.calls.count(), "connected_calls": c.calls.filter(calling_process='connected').count()}
+            } for c in campaigns]
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+    def post(self, request):
+        try:
+            user = Hospital_user_model.objects.get(id=request.user_id)
+            payload = request.data
+            purpose = payload.get('purpose', '')
+            if payload.get('template_type') == 'health_package':
+                purpose = f"Introduce health package: {payload.get('package_name')}. Inclusions: {payload.get('discount_details')}"
+            campaign = Campaign.objects.create(
+                hospital=user.hospital, name=payload.get('name'), template_type=payload.get('template_type', 'custom'),
+                package_name=payload.get('package_name'), facility_name=payload.get('facility_name'),
+                discount_details=payload.get('discount_details'), purpose=purpose
+            )
+            return Response({"msg": "Success", "id": str(campaign.id), "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class doctor_login_view(APIView):
+    def post(self, request):
+        try:
+            doctor = Doctor_model.objects.get(email=request.data.get('email'))
+            if check_password(request.data.get('password'), doctor.password_hash):
+                token = create_token({"user_id": str(doctor.id), "email": doctor.email, "role": "Doctor", "hospital_id": str(doctor.hospital.id)})    
+                return Response({"msg": "Success", "token": token, "doctor_name": doctor.name, "hospital_name": doctor.hospital.name, "error": 0})    
+            return Response({"msg": "Invalid password", "error": 1})
+        except: return Response({"msg": "Doctor not found", "error": 1})
+
+class MediVoiceSessionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def post(self, request):
+        try:
+            doctor_id = request.user_id
+            doctor = Doctor_model.objects.get(id=doctor_id)
+            data = request.data
+
+            session = MediVoiceSession.objects.create(
+                doctor=doctor,
+                patient_name=data.get('patientName'),
+                patient_mobile=data.get('patientMobile'),
+                patient_email=data.get('patientEmail'),
+                overall_summary=data.get('overallSummary'),
+                meta_data=data.get('metaData')
+            )
+
+            transcriptions = data.get('transcriptions', [])
+            for t in transcriptions:
+                MediVoiceTranscription.objects.create(
+                    session=session,
+                    speaker=t.get('speaker'),
+                    text=t.get('text'),
+                    timestamp=t.get('timestamp', 0.0)
+                )
+
+            return Response({"msg": "Session saved", "session_id": str(session.id), "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+    def get(self, request):
+        try:
+            doctor_id = request.user_id
+            sessions = MediVoiceSession.objects.filter(doctor_id=doctor_id).order_by('-created_at')
+            data = []
+            for s in sessions:
+                data.append({
+                    "id": str(s.id),
+                    "patientName": s.patient_name,
+                    "patientMobile": s.patient_mobile,
+                    "createdAt": s.created_at,
+                    "transcriptionCount": s.transcriptions.count()
+                })
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+class DoctorTranscriptionView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            sessions = MediVoiceSession.objects.filter(doctor__hospital_id=user_id).order_by('-created_at')
+            data = [{
+                "id": str(s.id), "doctorName": s.doctor.name, "doctorDepartment": s.doctor.department, "patientName": s.patient_name,
+                "patientMobile": s.patient_mobile, "overallSummary": s.overall_summary, "metaData": s.meta_data, "createdAt": s.created_at,
+                "transcriptions": [{"speaker": t.speaker, "text": t.text, "timestamp": t.timestamp} for t in s.transcriptions.all().order_by('timestamp')]
+            } for s in sessions]
+            return Response({"sessions": data, "doctors": list(Doctor_model.objects.filter(hospital_id=user_id).values('id', 'name', 'department')), "error": 0})
+        except Exception as e: return Response({"msg": str(e), "error": 1})
+
 class tab_access(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self,request):
         try:
             user_id= request.user_id
-            hospital_name=request.email
-            role = request.role
-            if role!='user':
-                return Response({"msg": "Invalid user", "error": 0})
             user = Hospital_user_model.objects.get(id=user_id)
             return Response({
             "patient_engagement": user.patient_engagement,
-            "community_engagement": user.community_egagement,  # typo retained for now
+            "community_engagement": user.community_egagement,
             "revisit_engagement": user.revisit_engagement,
             "escalation_engagement": user.escalation_engagement,
             "calllog_engagement": user.calllog_engagement,
             "upload_engagement": user.upload_engagement,
             "pdf_engagement":user.pdf_engagement
-            })          
-            
+            })
         except Exception as e:
             return Response({"error":1,"msg":str(e)})
-
-
-
-
-
-
-        
-    
-        
