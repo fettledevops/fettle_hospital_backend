@@ -1587,6 +1587,36 @@ class MediVoiceSessionView(APIView):
             return Response({"msg": "Success", "session_id": str(s.id), "error": 0})
         except Exception as e: return Response({"msg": str(e), "error": 1})
 
+class DoctorManagementView(APIView):
+    authentication_classes = [JWTAuthentication]
+    def get(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            doctors = Doctor_model.objects.filter(hospital_id=user_id).order_by('-created_at')
+            data = [{
+                "id": str(d.id), "name": d.name, "email": d.email, "department": d.department, "created_at": d.created_at
+            } for d in doctors]
+            return Response({"data": data, "error": 0})
+        except Exception as e: return Response({"msg": str(e), "error": 1})
+
+    def post(self, request):
+        try:
+            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+            payload = request.data
+            doctor, created = Doctor_model.objects.get_or_create(
+                email=payload.get('email'),
+                defaults={
+                    "hospital_id": user_id,
+                    "name": payload.get('name'),
+                    "department": payload.get('department'),
+                    "password_hash": payload.get('password', 'doctorpassword') # Default if none provided
+                }
+            )
+            if not created:
+                return Response({"msg": "Doctor with this email already exists", "error": 1})
+            return Response({"msg": "Doctor account created", "id": str(doctor.id), "error": 0})
+        except Exception as e: return Response({"msg": str(e), "error": 1})
+
 class DoctorTranscriptionView(APIView):
     authentication_classes = [JWTAuthentication]
     def get(self, request):
