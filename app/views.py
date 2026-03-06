@@ -1598,12 +1598,20 @@ class DoctorManagementView(APIView):
             } for d in doctors]
             return Response({"data": data, "error": 0})
         except Exception as e: return Response({"msg": str(e), "error": 1})
+def post(self, request):
+    try:
+        user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
+        payload = request.data
+        action = payload.get('action')
 
-    def post(self, request):
-        try:
-            user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            payload = request.data
-            doctor, created = Doctor_model.objects.get_or_create(
+        if action == 'reset_password':
+            doctor = Doctor_model.objects.get(id=payload.get('id'), hospital_id=user_id)
+            doctor.password_hash = 'doctorpassword' # Model save() handles hashing
+            doctor.save()
+            return Response({"msg": "Password reset to default", "error": 0})
+
+        doctor, created = Doctor_model.objects.get_or_create(
+...
                 email=payload.get('email'),
                 defaults={
                     "hospital_id": user_id,
