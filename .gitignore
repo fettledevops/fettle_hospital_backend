@@ -19,3 +19,4 @@ __pycache__/
 # Large files / temporary
 abcd.xlsx
 *.log
+staticfiles/

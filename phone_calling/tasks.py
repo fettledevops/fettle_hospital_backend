@@ -134,7 +134,7 @@ def json_audio(patient_id, text, called_at, duration):
     except:
         return {"error": 1}
 
-def read_from_s3_buket(bucket_name, key):
+def read_from_s3_bucket(bucket_name, key):
     try:
         s3 = boto3.client("s3", aws_access_key_id=settings.AWS_ACCESS_KEY_ID, aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY, region_name=settings.AWS_S3_REGION_NAME)
         return {"error": 0, "text": s3.get_object(Bucket=bucket_name, Key=key)["Body"].read().decode("utf-8")}
@@ -151,8 +151,8 @@ def process_outbound_calls(json_payload):
         hospital_name = json_payload["hospital_name"]
         
         # Pull from LiveKit storage
-        transcript_res = read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME, f"transcripts/{vapi_id}.json")
-        metadata_res = read_from_s3_buket(settings.LIVEKIT_BUCKET_NAME, f"calls/{vapi_id}.json")
+        transcript_res = read_from_s3_bucket(settings.LIVEKIT_BUCKET_NAME, f"transcripts/{vapi_id}.json")
+        metadata_res = read_from_s3_bucket(settings.LIVEKIT_BUCKET_NAME, f"calls/{vapi_id}.json")
         
         if transcript_res["error"] == 0 and metadata_res["error"] == 0:
             transcript = json.loads(transcript_res["text"])
