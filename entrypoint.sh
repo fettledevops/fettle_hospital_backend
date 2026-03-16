@@ -5,7 +5,8 @@ echo ">>> Running database migrations..."
 python manage.py migrate --noinput
 
 # Collect static files in production (DEBUG=False)
-if [ "$DEBUG" = "False" ] || [ "$DEBUG" = "false" ]; then
+DEBUG_NORMALIZED=$(printf '%s' "$DEBUG" | tr '[:upper:]' '[:lower:]')
+if [ "$DEBUG_NORMALIZED" != "true" ]; then
   echo ">>> Collecting static files..."
   python manage.py collectstatic --noinput --clear
 fi
