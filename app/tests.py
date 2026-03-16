@@ -1,12 +1,6 @@
-import os
-
-import django
 import pytest
 
-
-def ensure_django():
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings_test")
-    django.setup()
+from app.views import get_ordinal
 
 
 @pytest.mark.parametrize(
@@ -26,7 +20,4 @@ def ensure_django():
     ],
 )
 def test_get_ordinal(value, expected):
-    ensure_django()
-    from app.views import get_ordinal
-
     assert get_ordinal(value) == expected

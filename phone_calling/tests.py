@@ -1,18 +1,9 @@
 import importlib
-import os
 import sys
 import types
 
-import django
-
-
-def ensure_django():
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings_test")
-    django.setup()
-
 
 def load_tasks_module(monkeypatch):
-    ensure_django()
     fake_livekit_module = types.ModuleType("phone_calling.livekit_calling")
 
     def fake_dispatch_call(phone_number, id_key):
