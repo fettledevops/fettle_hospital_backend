@@ -34,7 +34,7 @@ def test_read_from_s3_bucket_success(monkeypatch):
             return {"Body": FakeBody()}
 
     monkeypatch.setattr(tasks.boto3, "client", lambda *args, **kwargs: FakeS3())
-    result = tasks.read_from_s3_buket("bucket", "key")
+    result = tasks.read_from_s3_bucket("bucket", "key")
     assert result == {"error": 0, "text": "sample text"}
 
 
@@ -45,7 +45,7 @@ def test_read_from_s3_bucket_failure(monkeypatch):
         raise RuntimeError("s3 down")
 
     monkeypatch.setattr(tasks.boto3, "client", fake_client)
-    result = tasks.read_from_s3_buket("bucket", "key")
+    result = tasks.read_from_s3_bucket("bucket", "key")
     assert result["error"] == 1
     assert "s3 down" in result["errorMsg"]
 
