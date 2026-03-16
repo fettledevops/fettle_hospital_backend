@@ -24,7 +24,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = ['*']
 
@@ -97,17 +97,15 @@ WSGI_APPLICATION = 'project.wsgi.application'
 # }
 DATABASES = {
     'default': {
-        "ENGINE": "django.db.backends.postgresql",
-        'NAME' : 'fettle_prod',
-        'PORT': 5432,
-        # 'HOST' : 'database-1.cnyyw6yagw6x.ap-south-1.rds.amazonaws.com',
-        'HOST':'fettleconnectdb.cnyyw6yagw6x.ap-south-1.rds.amazonaws.com',
-        'USER' : 'postgres',
-         'PASSWORD' : 'fettledb',
-         'OPTIONS': {
-            'sslmode': 'require',  # recommended for AWS RDS
-        }
-        
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'fettle_prod'),
+        'PORT': int(os.getenv('DB_PORT', 5432)),
+        'HOST': os.getenv('DB_HOST', 'fettleconnectdb.cnyyw6yagw6x.ap-south-1.rds.amazonaws.com'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'fettledb'),
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSL_MODE', 'require'),
+        },
     }
 }
 
@@ -158,4 +156,4 @@ CELERY_TIMEZONE = "Australia/Tasmania"
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_BROKER_URL="redis://localhost:6379/0"
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
