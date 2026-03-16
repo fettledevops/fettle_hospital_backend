@@ -18,6 +18,9 @@ import pytz
 # CloudConnect WhatsApp Configuration
 CLOUDCONNECT_WA_URL = "https://api.cloudconnect.in/whatsapp/send"
 CLOUDCONNECT_WA_KEY = os.getenv('CLOUDCONNECT_WA_KEY')
+INTERNAL_API_BASE_URL = os.getenv('INTERNAL_API_BASE_URL', 'https://hospital.fettleconnect.com:8000')
+INTERNAL_API_EMAIL = os.getenv('INTERNAL_API_EMAIL')
+INTERNAL_API_PASSWORD = os.getenv('INTERNAL_API_PASSWORD')
 
 def cloudconnect_whatsapp_msg(msg, to_number="+919010827279"):
     """
@@ -167,8 +170,14 @@ def process_outbound_calls(json_payload):
                     text_message += f"{item['role']} : {item['content'][0]}\n"
             
             # Internal Loopback Auth
-            url_backend = "https://hospital.fettleconnect.com:8000"
-            res_login = requests.post(f"{url_backend}/api/login/", json={"email": "admin@gmail.com", "password": "admin", "is_admin": True}).json()
+            url_backend = INTERNAL_API_BASE_URL
+            if not INTERNAL_API_EMAIL or not INTERNAL_API_PASSWORD:
+                return {"error": 1, "msg": "INTERNAL_API_EMAIL and INTERNAL_API_PASSWORD must be configured"}
+
+            res_login = requests.post(
+                f"{url_backend}/api/login/",
+                json={"email": INTERNAL_API_EMAIL, "password": INTERNAL_API_PASSWORD, "is_admin": True}
+            ).json()
             headers_url = {"Authorization": f"Bearer {res_login['token']}", "Content-Type": "application/json"}
             
             call_duration = round((datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)).total_seconds() / 60, 2)
