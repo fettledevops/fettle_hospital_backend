@@ -1,3 +1,9 @@
+import os
+
+os.environ.setdefault("DEBUG", "True")
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
+
 from .settings import *
 
 DATABASES = {
