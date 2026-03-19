@@ -1,8 +1,10 @@
 import os
 
-os.environ.setdefault("DEBUG", "True")
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
+# Force test-safe settings even if the shell or CI environment exports prod values.
+os.environ["DEBUG"] = "True"
+os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 
 from .settings import *
 
