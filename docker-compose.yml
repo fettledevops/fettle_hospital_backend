@@ -13,7 +13,9 @@ services:
     image: postgres:16-alpine
     profiles: [dev]
     restart: always
-    env_file: .env.dev
+    env_file:
+      - path: .env.dev
+        required: false
     environment:
       POSTGRES_DB: ${DB_NAME:-fettle_dev}
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -34,7 +36,9 @@ services:
       target: dev
     profiles: [dev]
     restart: always
-    env_file: .env.dev
+    env_file:
+      - path: .env.dev
+        required: false
     environment:
       RUN_MIGRATIONS: "true"
     ports:
@@ -54,7 +58,9 @@ services:
     profiles: [dev]
     command: celery -A project worker -l info -P gevent
     restart: always
-    env_file: .env.dev
+    env_file:
+      - path: .env.dev
+        required: false
     environment:
       RUN_MIGRATIONS: "false"
     volumes:
@@ -71,7 +77,9 @@ services:
       target: prod
     profiles: [prod]
     restart: always
-    env_file: .env.prod
+    env_file:
+      - path: .env.prod
+        required: false
     environment:
       RUN_MIGRATIONS: "true"
     ports:
@@ -87,12 +95,48 @@ services:
     profiles: [prod]
     command: celery -A project worker -l info -P gevent
     restart: always
-    env_file: .env.prod
+    env_file:
+      - path: .env.prod
+        required: false
     environment:
       RUN_MIGRATIONS: "false"
     depends_on:
       redis:
         condition: service_healthy
+  livekit-server:
+    build:
+      context: .
+      dockerfile: docker/livekit-server.Dockerfile
+    profiles: [prod]
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    command: --config /etc/livekit/livekit.yaml
+    working_dir: /etc/livekit
+    network_mode: host
+    depends_on:
+      redis:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
 
+  livekit-sip:
+    build:
+      context: .
+      dockerfile: docker/livekit-sip.Dockerfile
+    profiles: [prod]
+    restart: always
+    env_file:
+      - path: .env.prod
+        required: false
+    command: --config /etc/livekit/sip.yaml
+    working_dir: /etc/livekit
+    network_mode: host
+    depends_on:
+      livekit-server:
+        condition: service_started
 volumes:
   pgdata_dev:
