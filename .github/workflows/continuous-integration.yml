@@ -1,0 +1,271 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-hospital-backend
+  LIVEKIT_SERVER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-livekit-server
+  LIVEKIT_SIP_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/fettle-livekit-sip
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DJANGO_SETTINGS_MODULE: project.settings_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff black pip-audit
+
+      - name: Validate Python imports
+        run: python -m compileall app inbound_dashboard phone_calling project
+
+      - name: Run Django system checks
+        run: python manage.py check
+
+      - name: Check formatting
+        run: black --check app inbound_dashboard phone_calling project
+
+      - name: Lint with Ruff
+        run: ruff check app inbound_dashboard phone_calling project
+
+      - name: Audit Python dependencies
+        run: pip-audit --progress-spinner off
+
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+    env:
+      DJANGO_SETTINGS_MODULE: project.settings_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Run tests
+        run: python -m pytest --cov=app --cov=inbound_dashboard --cov=phone_calling --cov=project --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          if-no-files-found: error
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Compose configuration for dev
+        run: docker compose --profile dev config --quiet
+
+      - name: Validate Compose configuration for prod
+        run: docker compose --profile prod config --quiet
+
+      - name: Build app development image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: dev
+          push: false
+          load: false
+          cache-from: type=gha,scope=app-dev
+          cache-to: type=gha,mode=max,scope=app-dev
+
+      - name: Build app production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: prod
+          push: false
+          load: false
+          cache-from: type=gha,scope=app-prod
+          cache-to: type=gha,mode=max,scope=app-prod
+
+      - name: Build smoke-test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: prod
+          tags: fettle-backend:ci-smoke
+          push: false
+          load: true
+          cache-from: type=gha,scope=app-prod
+
+      - name: Smoke test application container
+        run: |
+          docker run --rm \
+            -e DJANGO_SETTINGS_MODULE=project.settings_test \
+            -e DEBUG=true \
+            -e SECRET_KEY=test-secret-key \
+            -e ALLOWED_HOSTS=localhost,127.0.0.1 \
+            -e RUN_MIGRATIONS=false \
+            -e CELERY_BROKER_URL=memory:// \
+            fettle-backend:ci-smoke \
+            python manage.py check --settings=project.settings_test
+
+      - name: Build LiveKit server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/livekit-server.Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=livekit-server
+          cache-to: type=gha,mode=max,scope=livekit-server
+
+      - name: Build LiveKit SIP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/livekit-sip.Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=livekit-sip
+          cache-to: type=gha,mode=max,scope=livekit-sip
+
+  publish-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: docker-build
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate app image metadata
+        id: app-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.APP_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Push app production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: prod
+          push: true
+          tags: ${{ steps.app-meta.outputs.tags }}
+          labels: ${{ steps.app-meta.outputs.labels }}
+          cache-from: type=gha,scope=app-prod
+          cache-to: type=gha,mode=max,scope=app-prod
+
+      - name: Generate LiveKit server image metadata
+        id: livekit-server-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.LIVEKIT_SERVER_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Push LiveKit server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/livekit-server.Dockerfile
+          push: true
+          tags: ${{ steps.livekit-server-meta.outputs.tags }}
+          labels: ${{ steps.livekit-server-meta.outputs.labels }}
+          cache-from: type=gha,scope=livekit-server
+          cache-to: type=gha,mode=max,scope=livekit-server
+
+      - name: Generate LiveKit SIP image metadata
+        id: livekit-sip-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.LIVEKIT_SIP_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Push LiveKit SIP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/livekit-sip.Dockerfile
+          push: true
+          tags: ${{ steps.livekit-sip-meta.outputs.tags }}
+          labels: ${{ steps.livekit-sip-meta.outputs.labels }}
+          cache-from: type=gha,scope=livekit-sip
+          cache-to: type=gha,mode=max,scope=livekit-sip

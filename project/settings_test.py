@@ -1,10 +1,9 @@
 import os
 
-# Force test-safe values even when the shell already exports production-like env vars.
 os.environ["DEBUG"] = "True"
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
-os.environ.setdefault("DB_PASSWORD", "postgres")
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 
 from .settings import *
 
