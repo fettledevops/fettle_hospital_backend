@@ -1,6 +1,5 @@
 import os
 
-# Force test-safe settings even if the shell or CI environment exports prod values.
 os.environ["DEBUG"] = "True"
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1"
