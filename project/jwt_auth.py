@@ -1,5 +1,4 @@
 import jwt
-from jwt import exceptions as JWTException
 from django.conf import settings
 import datetime
 from rest_framework.authentication import BaseAuthentication
@@ -42,7 +41,7 @@ class JWTAuthentication(BaseAuthentication):
             Response["msg"] = "Unauthorised request(102)"
             Response["error"] = 100
             raise AuthenticationFailed(Response)
-        except Exception as e:
+        except Exception:
             Response["msg"] = "Unauthorised request(102)"
             Response["error"] = 100
             raise AuthenticationFailed(Response)

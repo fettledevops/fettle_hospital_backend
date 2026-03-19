@@ -1,4 +1,3 @@
-from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import (
@@ -20,8 +19,6 @@ from .models import (
     MediVoiceTranscription,
     Inbound_Hospital,
     CallFeedbackModel_inbound,
-    CommunityEngagementModel_inbound,
-    EscalationModel_inbound,
 )
 from django.contrib.auth.hashers import check_password
 import pandas as pd
@@ -29,11 +26,10 @@ from project.jwt_auth import create_token, JWTAuthentication
 from django.utils.timezone import now
 from django.db import transaction
 from django.utils.dateparse import parse_datetime
-from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
-from django.db.models.functions import TruncDate, TruncMonth, TruncWeek, Coalesce, Cast
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.db.models import (
     Count,
     Avg,
@@ -42,10 +38,7 @@ from django.db.models import (
     ExpressionWrapper,
     DurationField,
     Q,
-    FloatField,
-    Sum,
 )
-import calendar
 from collections import OrderedDict
 from humanize import naturaltime
 from collections import defaultdict, Counter
@@ -53,7 +46,6 @@ from calendar import month_abbr
 from django.utils.timezone import localtime
 from docx import Document
 from datetime import datetime
-from docx2pdf import convert
 import uuid
 import os
 from django.http import FileResponse
@@ -220,9 +212,6 @@ class patient_insert_view(APIView):
             ]
             df_list = []
             df_date_list = []
-            file_keys = set()
-            file_keys_date = set()
-
             for file in files_list:
                 if file.name.endswith(".xlsx"):
                     df = pd.read_excel(file)
@@ -382,10 +371,10 @@ class CallFeedbackView(APIView):
             print(called_at)
             try:
                 called_at = parse_datetime(called_at)
-            except Exception as e:
+            except Exception:
                 called_at = None
             print(timezone.get_current_timezone())
-            if (called_at != None) and (timezone.is_naive(called_at)):
+            if called_at is not None and timezone.is_naive(called_at):
                 print("trrrr")
                 called_at = timezone.make_aware(
                     called_at, timezone.get_current_timezone()
@@ -460,8 +449,6 @@ class UpdateEscalation(APIView):
 
     def post(self, request):
         try:
-            admin_id = request.user_id
-            role = request.role
             # if role == 'user':
             #     return Response({"msg": "Invalid user", "error": 0})
             inputdict = request.data
@@ -591,7 +578,7 @@ class EscalationManagementView(APIView):
             return Response({"msg": str(e), "error": 1})
 
 
-class fetchpatients(APIView):
+class fetchpatients_restricted(APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
@@ -720,7 +707,6 @@ class fetchrecentactivity(APIView):
 
     def get(self, request):
         try:
-            admin_id = request.user_id
             role = request.role
             if role == "user":
                 return Response({"msg": "Invalid user", "error": 0})
@@ -784,7 +770,6 @@ class AdminDashboardView(APIView):
 
     def get(self, request):
         try:
-            admin_id = request.user_id
             role = request.role
             if role == "user":
                 return Response({"msg": "Only admin can access this", "error": 0})
@@ -1008,7 +993,7 @@ class KPISummary(APIView):
                     * 100,
                     2,
                 )
-            except Exception as e:
+            except Exception:
                 connected_people_rate = 0
             call_rate = {
                 "title": "Call Answer Rate",
@@ -1054,7 +1039,7 @@ class KPISummary(APIView):
                     / total_contacts
                 )
                 community_members_rate = np.round(community_members_rate * 100, 2)
-            except Exception as e:
+            except Exception:
                 community_members_rate = 0
             community_card = {
                 "title": "Community Conversion",
@@ -1115,11 +1100,11 @@ class fetchpatients(APIView):
 
     def get(self, request):
         try:
-            admin_id = request.user_id
+            user_id = request.user_id
             role = request.role
             hospital_ids = []
             if role == "user":
-                hospital_user = Hospital_user_model.objects.get(id=admin_id)
+                hospital_user = Hospital_user_model.objects.get(id=user_id)
                 hospital_ids.append(hospital_user.hospital.id)
             else:
                 hospital_ids = list(Hospital_model.objects.values_list("id", flat=True))
@@ -1142,7 +1127,7 @@ class fetchpatients(APIView):
                 try:
                     limit = int(limit_param)
                     patients_list = list(queryset[:limit])
-                except:
+                except ValueError:
                     patients_list = list(queryset)
 
             out_calls = Outbound_Hospital.objects.filter(
@@ -1632,7 +1617,7 @@ class EscalationEngagement(APIView):
 
             not_present = []
             for k, v in dict_present.items():
-                if v == False:
+                if not v:
                     not_present.append(
                         {"name": k, "value": 0, "color": status_colors[k.lower()]}
                     )
@@ -1764,7 +1749,6 @@ class Allhospitals(APIView):
 
     def get(self, request):
         try:
-            user_id = request.user_id
             role = request.role
             print("role-->", role)
             if role != "Admin":
@@ -1929,10 +1913,6 @@ class TextView(APIView):
             text = inputdict["text"]
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
             print("user_id-->", user_id)
-            hospital_name = request.email
-            print("hospital_name-->", hospital_name)
-            role = request.role
-
             # Get the Hospital_model instance
             hospital = Hospital_model.objects.get(id=user_id)
             TextModel.objects.update_or_create(hospital=hospital, text=text)
@@ -1943,8 +1923,6 @@ class TextView(APIView):
     def get(self, request):
         try:
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            hospital_name = request.email
-            role = request.role
             hospital = Hospital_model.objects.get(id=user_id)
             text = TextModel.objects.get(hospital=hospital)
             print("text---->", text)
@@ -1959,7 +1937,6 @@ class tab_access(APIView):
     def get(self, request):
         try:
             user_id = request.user_id
-            hospital_name = request.email
             role = request.role
             if role != "user":
                 return Response({"msg": "Invalid user", "error": 0})
@@ -2164,7 +2141,7 @@ class doctor_login_view(APIView):
                     }
                 )
             return Response({"msg": "Invalid password", "error": 1})
-        except:
+        except Doctor_model.DoesNotExist:
             return Response({"msg": "Doctor not found", "error": 1})
 
 

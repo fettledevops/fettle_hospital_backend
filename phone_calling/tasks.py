@@ -3,24 +3,21 @@ from app.models import (
     Outbound_assistant,
     Hospital_model,
     Patient_model,
-    Inbound_Hospital,
 )
 from celery import shared_task
 import requests
 import boto3
 from dotenv import load_dotenv
-
-load_dotenv()
 from django.conf import settings
 from openai import OpenAI
-from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 from time import sleep
 import json
 from phone_calling.livekit_calling import dispatch_call
 import os
 import traceback
-import pytz
+
+load_dotenv()
 
 # CloudConnect WhatsApp Configuration
 CLOUDCONNECT_WA_URL = "https://api.cloudconnect.in/whatsapp/send"
@@ -37,7 +34,6 @@ def cloudconnect_whatsapp_msg(msg, to_number="+919010827279"):
     Sends a WhatsApp message via CloudConnect API.
     """
     try:
-        payload = {"to": to_number, "message": msg, "api_key": CLOUDCONNECT_WA_KEY}
         # response = requests.post(CLOUDCONNECT_WA_URL, json=payload)
         print(f"CloudConnect WhatsApp Sent to {to_number}: {msg}")
         return {"status": "success"}
@@ -64,14 +60,14 @@ def call_outbound_task(json_payload):
 
         try:
             assistant_id = Outbound_assistant.objects.get(hospital=hospital_obj)
-        except:
+        except Outbound_assistant.DoesNotExist:
             assistant_id = None
 
         try:
             patient_obj = Patient_model.objects.get(
                 id=json_payload["metadata"]["patient_id"]
             )
-        except:
+        except Patient_model.DoesNotExist:
             patient_obj = None
 
         campaign_id = json_payload["metadata"].get("campaign_id")
@@ -81,8 +77,8 @@ def call_outbound_task(json_payload):
 
             try:
                 campaign_obj = Campaign.objects.get(id=campaign_id)
-            except:
-                pass
+            except Campaign.DoesNotExist:
+                campaign_obj = None
 
         Outbound_Hospital.objects.create(
             vapi_id=vapi_id,
@@ -148,7 +144,7 @@ def json_audio(patient_id, text, called_at, duration):
         parsed_json["called_at"] = called_at
         parsed_json["call_duration"] = duration
         return parsed_json
-    except:
+    except (json.JSONDecodeError, TypeError):
         return {"error": 1}
 
 
@@ -301,7 +297,7 @@ def inbound_call_task(json_payload):
 def process_inbound_calls(json_payload):
     # Similar to outbound but for Inbound_Hospital model
     try:
-        room_name = json_payload["vapi_id"]
+        json_payload["vapi_id"]
         # Logic to pull from S3 and update Inbound_Hospital
         return {"status": "success"}
     except Exception as e:

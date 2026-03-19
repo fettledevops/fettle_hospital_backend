@@ -1,51 +1,20 @@
-from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from app.models import (
-    Admin_model,
     Hospital_model,
     Patient_model,
-    HospitalUploadLog,
-    CallFeedbackModel,
-    CommunityEngagementModel,
-    EscalationModel,
-    Patient_date_model,
     TextModel,
-    Hospital_user_model,
     Outbound_Hospital,
     Outbound_assistant,
     Inbound_Hospital,
 )
-from django.contrib.auth.hashers import check_password
 import pandas as pd
-from project.jwt_auth import create_token, JWTAuthentication
-from django.utils.timezone import now
-from django.db import transaction
-from django.utils.dateparse import parse_datetime
-from django.utils.timezone import make_aware
-from django.utils import timezone
+from project.jwt_auth import JWTAuthentication
 from django.http import HttpResponse
-import numpy as np
-from datetime import timedelta
-from django.db.models.functions import TruncDate
-from django.db.models import Count, Avg, Min, F, ExpressionWrapper, DurationField, Q
-import calendar
-from django.db.models.functions import TruncWeek
-from collections import OrderedDict
-from humanize import naturaltime
-from collections import defaultdict, Counter
-from calendar import month_abbr
-from django.utils.timezone import localtime
-from docx import Document
 from datetime import datetime
-from docx2pdf import convert
-import uuid
-import os
-from django.http import FileResponse
 from .tasks import (
     call_outbound_task,
     process_outbound_calls,
-    inbound_call_task,
     process_inbound_calls,
 )
 from django.db.models import Subquery
@@ -58,7 +27,6 @@ class Outbound_call(APIView):
 
     def post(self, request):
         try:
-            admin_id = request.user_id
             role = request.role
 
             if role == "user":
@@ -93,7 +61,6 @@ class Outbound_call(APIView):
                 )
 
             assistant_id = outbound_assistant.assistant_id
-            call_id = outbound_assistant.call_id
 
             if not assistant_id:
                 return Response(
@@ -228,7 +195,6 @@ class Process_Outbound_call(APIView):
 
     def post(self, request):
         try:
-            admin_id = request.user_id
             role = request.role
 
             if role == "user":
@@ -291,7 +257,6 @@ class showInboundcall(APIView):
 
     def get(self, request):
         try:
-            user_id = request.user_id
             role = request.role
             if role == "user":
                 return Response({"msg": "Invalid User", "error": 0})
@@ -334,7 +299,6 @@ class processinboundcall_view(APIView):
 
     def post(self, request):
         try:
-            user_id = request.user_id
             role = request.role
             if role == "user":
                 return Response({"msg": "Invalid User", "error": 0})
@@ -359,10 +323,6 @@ class processinboundcall_view(APIView):
             )
         except Exception as e:
             return Response({"error": 1, "errorMsg": str(e)})
-
-
-from livekit import api
-
 
 class LiveKitWebhook(APIView):
     """
@@ -426,7 +386,6 @@ class download_excel_outbound(APIView):
                 # already naive
                 return dt
 
-            user_id = request.user_id
             role = request.role
             if role == "user":
                 return Response({"msg": "Invalid User", "error": 0})
@@ -481,7 +440,7 @@ class download_excel_outbound(APIView):
             buffer.seek(0)
             # print("ehllo")
             # df_empty.to_excel("abcd.xlsx")
-            filename = f"outbound_hospitals.xlsx"
+            filename = "outbound_hospitals.xlsx"
             response = HttpResponse(
                 buffer.getvalue(),
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

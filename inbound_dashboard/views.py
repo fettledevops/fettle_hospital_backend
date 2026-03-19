@@ -1,48 +1,36 @@
-from django.shortcuts import render
-from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from app.models import (
-    Admin_model,
-    Hospital_model,
-    Patient_model,
-    HospitalUploadLog,
     CallFeedbackModel_inbound,
     CommunityEngagementModel_inbound,
     EscalationModel_inbound,
-    Patient_date_model,
-    TextModel,
     Hospital_user_model,
-    Outbound_Hospital,
-    Outbound_assistant,
     Inbound_Hospital,
 )
-from django.contrib.auth.hashers import check_password
-import pandas as pd
-from project.jwt_auth import create_token, JWTAuthentication
+from project.jwt_auth import JWTAuthentication
 from django.utils.timezone import now
-from django.db import transaction
 from django.utils.dateparse import parse_datetime
-from django.utils.timezone import make_aware
 from django.utils import timezone
 import numpy as np
 from datetime import timedelta
 from django.db.models.functions import TruncDate, TruncWeek, TruncMonth, Coalesce, Cast
+from django.db.models import (
+    Avg,
+    Count,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    FloatField,
+    Min,
+)
 from collections import OrderedDict
 from humanize import naturaltime
 from collections import defaultdict, Counter
 from calendar import month_abbr
 from django.utils.timezone import localtime
-from docx import Document
 from datetime import datetime
-from docx2pdf import convert
-import uuid
-import os
-from django.http import FileResponse
 
 # Create your views here.
-from django.db.models.functions import Coalesce
-
 
 def make_naive(dt, tz_name="Asia/Kolkata"):
     import pytz
@@ -277,10 +265,10 @@ class CallFeedbackView_inbound(APIView):
             print(called_at)
             try:
                 called_at = parse_datetime(called_at)
-            except Exception as e:
+            except Exception:
                 called_at = None
             print(timezone.get_current_timezone())
-            if (called_at != None) and (timezone.is_naive(called_at)):
+            if called_at is not None and timezone.is_naive(called_at):
                 print("trrrr")
                 called_at = timezone.make_aware(
                     called_at, timezone.get_current_timezone()
@@ -595,7 +583,7 @@ class EscalationEngagement_inbound(APIView):
 
             not_present = []
             for k, v in dict_present.items():
-                if v == False:
+                if not v:
                     not_present.append(
                         {"name": k, "value": 0, "color": status_colors[k.lower()]}
                     )
@@ -883,7 +871,6 @@ class KPISummary_inbound(APIView):
                 start_of_this_month = datetime.strptime(
                     start_date_str, "%Y-%m-%d"
                 ).date()
-                delta = (end_date - start_of_this_month).days
                 today = end_date
             else:
                 today = timezone.now().date()
@@ -1011,17 +998,12 @@ class KPISummary_inbound(APIView):
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
 
-        except Exception as e:
-            return Response({"msg": str(e), "error": 1})
-
 
 class UpdateEscalation_inbound(APIView):
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
         try:
-            admin_id = request.user_id
-            role = request.role
             # if role == 'user':
             #     return Response({"msg": "Invalid user", "error": 0})
             inputdict = request.data
