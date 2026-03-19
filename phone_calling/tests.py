@@ -10,7 +10,9 @@ def load_tasks_module(monkeypatch):
         return None
 
     fake_livekit_module.dispatch_call = fake_dispatch_call
-    monkeypatch.setitem(sys.modules, "phone_calling.livekit_calling", fake_livekit_module)
+    monkeypatch.setitem(
+        sys.modules, "phone_calling.livekit_calling", fake_livekit_module
+    )
     if "phone_calling.tasks" in sys.modules:
         del sys.modules["phone_calling.tasks"]
     return importlib.import_module("phone_calling.tasks")

@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ci-tests
+        name: CI test suite
+        entry: python run_tests.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
