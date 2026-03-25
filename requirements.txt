@@ -21,6 +21,7 @@ boto3
 psycopg2-binary
 python-dotenv
 openai
+paypalrestsdk
 langchain
 langchain-openai
 langchain-core
