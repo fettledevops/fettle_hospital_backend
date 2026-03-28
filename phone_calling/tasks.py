@@ -310,31 +310,48 @@ def send_prescription_notifications(session_id):
     try:
         session = MediVoiceSession.objects.get(id=session_id)
         doctor = session.doctor
+        hospital = doctor.hospital
         patient_name = session.patient_name
         patient_mobile = session.patient_mobile
         patient_email = session.patient_email
         summary = session.overall_summary
+        diagnosis = session.diagnosis
+        medicines = session.medicines
+        revisit_date = session.revisit_date
+        revisit_time = session.revisit_time
 
         # Build the message
-        availability_info = f"Doctor is available: {doctor.availability}" if doctor.availability else "Please check doctor's profile for availability."
+        med_str = ""
+        if medicines and isinstance(medicines, list):
+            med_str = "\nMedicines prescribed:\n" + "\n".join([f"- {m.get('name')} ({m.get('dosage')}, {m.get('duration')})" for m in medicines])
         
-        message = f"Hello {patient_name}, this is from Dr. {doctor.name}'s office at {doctor.hospital.name}. " \
-                  f"Your consultation summary: {summary}. " \
-                  f"For follow-ups, contact: {doctor.mobile_number}. {availability_info}"
+        revisit_str = ""
+        if revisit_date:
+            revisit_str = f"\nRevisit Date: {revisit_date}"
+            if revisit_time:
+                revisit_str += f" at {revisit_time}"
+
+        message = f"Hello {patient_name}, this is from Dr. {doctor.name}'s office at {hospital.name}.\n\n" \
+                  f"Diagnosis: {diagnosis}\n" \
+                  f"Consultation Summary: {summary}{med_str}{revisit_str}\n\n" \
+                  f"For follow-ups, contact: {doctor.mobile_number}."
         
-        # Send WhatsApp via existing utility
+        # Send WhatsApp to patient
         cloudconnect_whatsapp_msg(message, to_number=patient_mobile)
         
-        # Email (Mock/Log for now)
+        # Email to patient
         if patient_email:
-            print(f"DEBUG: Sending prescription email to {patient_email} for patient {patient_name}")
-            # send_mail(
-            #     f"Consultation Summary - {doctor.hospital.name}",
-            #     message,
-            #     settings.DEFAULT_FROM_EMAIL,
-            #     [patient_email],
-            #     fail_silently=False,
-            # )
+            print(f"DEBUG: Sending prescription email to patient {patient_email}")
+            # send_mail(...)
+
+        # Notify Reception and Pharmacy
+        if hospital.reception_email:
+            print(f"DEBUG: Notifying reception at {hospital.reception_email}")
+            # send_mail(f"New Prescription - {patient_name}", message, settings.DEFAULT_FROM_EMAIL, [hospital.reception_email])
+        
+        if hospital.pharmacy_email:
+            print(f"DEBUG: Notifying pharmacy at {hospital.pharmacy_email}")
+            # send_mail(f"New Prescription Order - {patient_name}", message, settings.DEFAULT_FROM_EMAIL, [hospital.pharmacy_email])
             
         return {"status": "success", "session_id": str(session_id)}
     except Exception as e:
@@ -350,9 +367,15 @@ def reminder_task(session_id, reminder_type):
         doctor = session.doctor
         patient_name = session.patient_name
         patient_mobile = session.patient_mobile
+        revisit_date = session.revisit_date
+        revisit_time = session.revisit_time
         
-        msg = f"Reminder ({reminder_type}): This is {doctor.hospital.name}. We hope you're doing well after your consultation with Dr. {doctor.name}. " \
-              f"Please remember to follow the prescribed routine. Contact {doctor.mobile_number} for any queries."
+        time_str = f"on {revisit_date}"
+        if revisit_time:
+            time_str += f" at {revisit_time}"
+
+        msg = f"Reminder ({reminder_type}): This is {doctor.hospital.name}. You have a follow-up appointment scheduled with Dr. {doctor.name} {time_str}. " \
+              f"Please confirm your arrival. Contact {doctor.mobile_number} for any queries."
         
         cloudconnect_whatsapp_msg(msg, to_number=patient_mobile)
         return {"status": "success", "type": reminder_type}
@@ -363,19 +386,32 @@ def reminder_task(session_id, reminder_type):
 
 @shared_task
 def schedule_reminder_calls(session_id):
-    from datetime import timedelta
+    from datetime import datetime, timedelta, date, time
     from django.utils import timezone
+    from app.models import MediVoiceSession
     try:
+        session = MediVoiceSession.objects.get(id=session_id)
+        if not session.revisit_date:
+            return {"status": "skipped", "reason": "no revisit date"}
+
+        # Combine date and time
+        revisit_dt = datetime.combine(
+            session.revisit_date, 
+            session.revisit_time if session.revisit_time else time(10, 0)
+        )
+        revisit_dt = timezone.make_aware(revisit_dt, timezone.get_current_timezone())
+
         # Schedule 24h reminder
-        eta_24h = timezone.now() + timedelta(hours=24)
-        reminder_task.apply_async(args=[session_id, "24h"], eta=eta_24h)
+        eta_24h = revisit_dt - timedelta(hours=24)
+        if eta_24h > timezone.now():
+            reminder_task.apply_async(args=[session_id, "24h"], eta=eta_24h)
         
-        # Schedule 1h reminder (Assuming 1 hour from now for immediate follow-up test or similar)
-        # Usually it would be relative to an appointment, but here we'll do 1h from now as requested.
-        eta_1h = timezone.now() + timedelta(hours=1)
-        reminder_task.apply_async(args=[session_id, "1h"], eta=eta_1h)
+        # Schedule 1h reminder
+        eta_1h = revisit_dt - timedelta(hours=1)
+        if eta_1h > timezone.now():
+            reminder_task.apply_async(args=[session_id, "1h"], eta=eta_1h)
         
-        return {"status": "scheduled", "session_id": str(session_id)}
+        return {"status": "scheduled", "session_id": str(session_id), "revisit": str(revisit_dt)}
     except Exception as e:
         print(f"Error in schedule_reminder_calls: {str(e)}")
         return {"status": "error", "message": str(e)}

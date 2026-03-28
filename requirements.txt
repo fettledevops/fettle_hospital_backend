@@ -3,6 +3,7 @@ gunicorn
 django-cors-headers
 djangorestframework
 djangorestframework-simplejwt
+PyJWT
 pandas
 numpy
 django-sslserver-v2
@@ -22,6 +23,11 @@ weasyprint
 django-sslserver-v2
 python-dotenv
 openai
+paypalrestsdk
+langchain
+langchain-openai
+langchain-core
+langgraph
 livekit-agents[silero,turn-detector]~=1.3
 livekit-plugins-noise-cancellation~=0.2
 livekit-agents[openai]~=1.3

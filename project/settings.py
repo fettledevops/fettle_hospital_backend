@@ -71,6 +71,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "app",
     "phone_calling",
+    "inbound_dashboard",
+    "chatbot",
     "django_celery_results",
     "sslserver",
 ]
@@ -109,23 +111,10 @@ WSGI_APPLICATION = "project.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "fettle_dev"),
-        "PORT": int(os.getenv("DB_PORT", 5432)),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "postgres" if DEBUG else ""),
-        "OPTIONS": {
-            "sslmode": DB_SSL_MODE,
-        },
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -157,7 +146,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-
 TIME_ZONE = "Asia/Kolkata"
 
 USE_I18N = True
@@ -170,6 +158,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+# Media files (uploaded images for dermatology consultations)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "mediafiles")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -1436,8 +1436,8 @@ class CommunityEngagement(APIView):
             fb_dist_qs = (
                 CallFeedbackModel.objects.filter(patient__hospital=user_id)
                 .values("call_outcome")
-                .annotate(count=Count("id"))
-                .order_by("-count")
+                .annotate(value=Count("id"))
+                .order_by("-value")
             )
             feedback_distribution = []
             for item in fb_dist_qs:
@@ -1449,8 +1449,8 @@ class CommunityEngagement(APIView):
                     .order_by("-called_at")[:10]
                 )
                 feedback_distribution.append({
-                    "outcome": outcome.replace("_", " ").title(),
-                    "count": item["count"],
+                    "name": outcome.replace("_", " ").title(),
+                    "value": item["value"],
                     "patients": [
                         {
                             "name": d.patient.patient_name,
@@ -1464,8 +1464,8 @@ class CommunityEngagement(APIView):
             intent_qs = (
                 CommunityEngagementModel.objects.filter(patient__hospital=user_id)
                 .values("engagement_type")
-                .annotate(count=Count("id"))
-                .order_by("-count")
+                .annotate(value=Count("id"))
+                .order_by("-value")
             )
             patient_intents = []
             for item in intent_qs:
@@ -1476,8 +1476,10 @@ class CommunityEngagement(APIView):
                     .order_by("-created_at")[:10]
                 )
                 patient_intents.append({
+                    "name": etype.replace("_", " ").title(),
+                    "value": item["value"],
                     "intent": etype.replace("_", " ").title(),
-                    "count": item["count"],
+                    "count": item["value"],
                     "patients": [
                         {
                             "name": d.patient.patient_name,
@@ -1750,6 +1752,13 @@ class EscalationEngagement(APIView):
                 "total_escalations": total_escalations,
                 "avg_resolution_time": avg_resolution_minutes,
                 "resolved_today": resolved_today,
+                "formulae": {
+                    "Revenue Influenced": "Appointments Booked * 650",
+                    "Leakage Prevented": "Missed Calls * 0.42 * 650",
+                    "Staff Hours Saved": "Total Call Duration / 60",
+                    "Equivalent FTE Freed": "Total Call Duration / 6000",
+                    "Cost Efficiency Value": "(Total Call Duration / 6000) * 40000"
+                }
             }
             return Response(
                 {
@@ -1906,7 +1915,10 @@ class PdfView(APIView):
                 else 0
             )
 
+            report_type = inputdict.get("report_type", "detailed")
+
             context = {
+                "report_type": report_type,
                 "reporting_period": f"{start_str} to {end_str}",
                 "hospital_name": hospital_name.title(),
                 "call_patients": connected_data,
@@ -1920,7 +1932,13 @@ class PdfView(APIView):
                 "call_connected": call_cc,
             }
 
-            html_string = render_to_string("report_template.html", context)
+            # If only metrics, we can use a different template or logic
+            template = "report_template.html"
+            if report_type == "only_metrics":
+                # Maybe use a simplified template or context
+                pass
+
+            html_string = render_to_string(template, context)
             pdf_bytes = generate_pdf_from_html(html_string)
 
             if pdf_bytes:
@@ -1950,38 +1968,49 @@ class TextView(APIView):
 
             media_url = None
             if media_file:
-                media_url = upload_to_s3(media_file, media_file.name)
+                # Use absolute path for S3 upload
+                media_url = upload_to_s3(media_file, f"whatsapp_media/{uuid.uuid4()}_{media_file.name}")
 
-            # Update or create TextModel
+            # Update or create TextModel for hospital's default message
             text_obj, created = TextModel.objects.update_or_create(
                 hospital=hospital,
-                defaults={"text": text, "media_url": media_url}
+                defaults={"text": text, "media_url": media_url} if text else {"media_url": media_url}
             )
 
             if target_list_file:
-                # Parse Excel target list
+                # Parse Excel/CSV target list
                 if target_list_file.name.endswith(".xlsx"):
                     df = pd.read_excel(target_list_file)
                 else:
                     df = pd.read_csv(target_list_file)
 
-                # Assume column is 'Mobile No' or similar
+                # Identify mobile number column
                 numbers = []
-                possible_cols = ["Mobile No", "Mobile", "Phone", "mobile_no"]
+                possible_cols = ["Mobile No", "Mobile", "Phone", "mobile_no", "Number"]
                 for col in possible_cols:
                     if col in df.columns:
                         numbers = df[col].dropna().tolist()
                         break
 
+                if not numbers:
+                    # Try first column if none of the specific names match
+                    numbers = df.iloc[:, 0].dropna().tolist()
+
                 if numbers:
                     from phone_calling.tasks import cloudconnect_whatsapp_msg
                     for num in numbers:
-                        msg = text if text else "Health Update"
+                        # Ensure number is a string and formatted
+                        num_str = str(int(float(num))) if isinstance(num, (int, float)) else str(num)
+                        msg = text if text else "Health Update from " + hospital.name
                         if media_url:
-                            msg += f"\nMedia: {media_url}"
-                        cloudconnect_whatsapp_msg(msg, to_number=str(num))
+                            msg += f"\nView attachment: {media_url}"
+                        cloudconnect_whatsapp_msg(msg, to_number=num_str)
 
-            return Response({"error": 0, "msg": "Success", "media_url": media_url})
+            return Response({
+                "error": 0, 
+                "msg": "Message broadcast initiated" if target_list_file else "Template saved", 
+                "media_url": media_url
+            })
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
 
@@ -2221,7 +2250,13 @@ class MediVoiceSessionView(APIView):
                 doctor=doctor,
                 patient_name=d.get("patientName"),
                 patient_mobile=d.get("patientMobile"),
+                patient_email=d.get("patientEmail"),
                 overall_summary=d.get("overallSummary"),
+                diagnosis=d.get("diagnosis"),
+                medicines=d.get("medicines"),
+                revisit_date=d.get("revisitDate"),
+                revisit_time=d.get("revisitTime"),
+                meta_data=d.get("metaData", {})
             )
             from phone_calling.tasks import send_prescription_notifications, schedule_reminder_calls
             send_prescription_notifications.delay(s.id)

@@ -10,6 +10,8 @@ class Hospital_model(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     name = models.CharField(max_length=255, unique=True)
+    reception_email = models.EmailField(null=True, blank=True)
+    pharmacy_email = models.EmailField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -281,6 +283,10 @@ class MediVoiceSession(models.Model):
     patient_mobile = models.CharField(max_length=20)
     patient_email = models.EmailField(null=True, blank=True)
     overall_summary = models.TextField(null=True, blank=True)
+    diagnosis = models.TextField(null=True, blank=True)
+    medicines = models.JSONField(null=True, blank=True)
+    revisit_date = models.DateField(null=True, blank=True)
+    revisit_time = models.TimeField(null=True, blank=True)
     meta_data = models.JSONField(
         null=True, blank=True
     )  # For Gemini metadata (BP, findings, etc)

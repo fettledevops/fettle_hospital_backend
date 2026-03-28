@@ -3,20 +3,13 @@ URL configuration for project project.
 
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
 from django.contrib import admin
 from django.urls import path
+from django.conf import settings
+from django.conf.urls.static import static
+
 from app.views import (
     login_view,
     patient_insert_view,
@@ -69,9 +62,47 @@ from inbound_dashboard.views import (
     KPISummary_inbound,
     UpdateEscalation_inbound,
 )
+from chatbot.views import (
+    GoogleAuthView,
+    DermatologyValidateTokenView,
+    ChatView,
+    ConsultationListView,
+    ArchiveConsultationView,
+    DoctorChatAPIView,
+    DoctorSendResponseView,
+)
 
 urlpatterns = [
     path("api/admin/", admin.site.urls),
+
+    # ----------------------------------------------------------------
+    # Dermatology chatbot — patient auth
+    # ----------------------------------------------------------------
+    path("auth/google/", GoogleAuthView.as_view()),
+
+    # ----------------------------------------------------------------
+    # Unified token validation (handles both patient + doctor tokens)
+    # Must come BEFORE the legacy validateToken to take precedence.
+    # ----------------------------------------------------------------
+    path("api/validate_token/", DermatologyValidateTokenView.as_view()),
+
+    # ----------------------------------------------------------------
+    # Dermatology chatbot — patient endpoints
+    # ----------------------------------------------------------------
+    path("api/chat_view/", ChatView.as_view()),
+    path("api/chat_history/", ChatView.as_view()),
+    path("api/consultation_list/", ConsultationListView.as_view()),
+    path("api/archive_consultation/", ArchiveConsultationView.as_view()),
+
+    # ----------------------------------------------------------------
+    # Dermatology chatbot — doctor endpoints
+    # ----------------------------------------------------------------
+    path("api/doctor_chat_view/", DoctorChatAPIView.as_view()),
+    path("api/doctor_send_response/", DoctorSendResponseView.as_view()),
+
+    # ----------------------------------------------------------------
+    # Existing hospital management endpoints (unchanged)
+    # ----------------------------------------------------------------
     path("api/login/", login_view.as_view()),
     path("api/files_insert/", patient_insert_view.as_view()),
     path("api/callfeedback/", CallFeedbackView.as_view()),
@@ -87,7 +118,6 @@ urlpatterns = [
     path("api/patientengagement/", Patientengagement.as_view()),
     path("api/communityengagement/", CommunityEngagement.as_view()),
     path("api/escalationengagement/", EscalationEngagement.as_view()),
-    path("api/validate_token/", validateToken.as_view()),
     path("api/files_log/", upload_files_log.as_view()),
     path("api/allhospitals/", Allhospitals.as_view()),
     path("api/revisitengagement/", RevisitAnalyticsAPIView.as_view()),
@@ -118,4 +148,4 @@ urlpatterns = [
     path("api/kpisummary_inbound/", KPISummary_inbound.as_view()),
     path("api/update_escalation_inbound/", UpdateEscalation_inbound.as_view()),
     path("api/process_inbound_call/", processinboundcall_view.as_view()),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
