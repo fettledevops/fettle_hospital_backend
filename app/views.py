@@ -2003,9 +2003,9 @@ class TextView(APIView):
             if target_list_file:
                 # Parse Excel/CSV target list
                 if target_list_file.name.endswith(".xlsx"):
-                    df = pd.read_excel(target_list_file)
+                    df = pd.read_excel(target_list_file, dtype=str)
                 else:
-                    df = pd.read_csv(target_list_file)
+                    df = pd.read_csv(target_list_file, dtype=str)
 
                 # Identify mobile number column
                 numbers = []
@@ -2023,12 +2023,13 @@ class TextView(APIView):
                     from phone_calling.tasks import cloudconnect_whatsapp_msg
 
                     for num in numbers:
-                        # Ensure number is a string and formatted
-                        num_str = (
-                            str(int(float(num)))
-                            if isinstance(num, (int, float))
-                            else str(num)
-                        )
+                        # Ensure number is a string and formatted correctly
+                        # If pandas still gives us a float-like string (e.g. "919010.0"), 
+                        # we normalize it while being careful with leading zeros and plus signs.
+                        num_str = str(num).strip()
+                        if num_str.endswith(".0"):
+                            num_str = num_str[:-2]
+                        
                         msg = text if text else "Health Update from " + hospital.name
                         if media_url:
                             msg += f"\nView attachment: {media_url}"

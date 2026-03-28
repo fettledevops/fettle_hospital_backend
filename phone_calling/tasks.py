@@ -324,12 +324,13 @@ def send_prescription_notifications(session_id):
         # Build the message
         med_str = ""
         if medicines and isinstance(medicines, list):
-            med_str = "\nMedicines prescribed:\n" + "\n".join(
-                [
-                    f"- {m.get('name')} ({m.get('dosage')}, {m.get('duration')})"
-                    for m in medicines
-                ]
-            )
+            med_list = []
+            for m in medicines:
+                if isinstance(m, dict):
+                    med_list.append(f"- {m.get('name')} ({m.get('dosage')}, {m.get('duration')})")
+                else:
+                    med_list.append(f"- {str(m)}")
+            med_str = "\nMedicines prescribed:\n" + "\n".join(med_list)
 
         revisit_str = ""
         if revisit_date:
