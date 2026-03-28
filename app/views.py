@@ -2425,7 +2425,12 @@ class StaffAvailabilityView(APIView):
             hospital_id = Hospital_user_model.objects.get(
                 id=request.user_id
             ).hospital.id
+            doctor_id = request.query_params.get("doctor_id")
             doctors = Doctor_model.objects.filter(hospital_id=hospital_id)
+
+            if doctor_id and doctor_id != "all":
+                doctors = doctors.filter(id=doctor_id)
+
             data = []
             for doc in doctors:
                 data.append(
