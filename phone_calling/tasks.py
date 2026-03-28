@@ -327,7 +327,9 @@ def send_prescription_notifications(session_id):
             med_list = []
             for m in medicines:
                 if isinstance(m, dict):
-                    med_list.append(f"- {m.get('name')} ({m.get('dosage')}, {m.get('duration')})")
+                    med_list.append(
+                        f"- {m.get('name')} ({m.get('dosage')}, {m.get('duration')})"
+                    )
                 else:
                     med_list.append(f"- {str(m)}")
             med_str = "\nMedicines prescribed:\n" + "\n".join(med_list)

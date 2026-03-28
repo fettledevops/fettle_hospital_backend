@@ -17,7 +17,18 @@ from livekit.agents import (
     RunContext,
 )
 from livekit.plugins import noise_cancellation, silero
-from livekit.plugins import openai, deepgram, cartesia, silero, noise_cancellation, soniox, gladia, elevenlabs, sarvam, google 
+from livekit.plugins import (
+    openai,
+    deepgram,
+    cartesia,
+    silero,
+    noise_cancellation,
+    soniox,
+    gladia,
+    elevenlabs,
+    sarvam,
+    google,
+)
 
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -49,34 +60,8 @@ You can check real-time doctor availability using the 'get_doctor_availability' 
 
 ────────────────
 LANGUAGE BEHAVIOR (CRITICAL)
-""",
-        )
 
-    @function_tool
-    async def get_doctor_availability(self, context: RunContext, doctor_id: str):
-        """Use this tool to check the real-time availability of a doctor.
-
-        Args:
-            doctor_id: The ID of the doctor to check availability for.
-        """
-        logger.info(f"Checking availability for doctor {doctor_id}")
-        base_url = os.environ.get("INTERNAL_API_BASE_URL", "http://localhost:8000")
-        token = os.environ.get("INTERNAL_API_TOKEN")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{base_url}/api/staff/availability/?doctor_id={doctor_id}",
-                headers=headers
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return str(data)
-                else:
-                    return f"Failed to fetch availability. Status: {response.status}"
-
-    # To add tools, use the @function_tool decorator.
-
+Determine the caller’s preferred language: English, Hindi, or Telugu.
 * Store it internally as preferred_language
 * Speak ONLY in preferred_language
 * Do NOT mix languages
@@ -175,22 +160,28 @@ When the user’s request is fully handled:
 """,
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add from livekit.agents import function_tool, RunContext to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
+    @function_tool
+    async def get_doctor_availability(self, context: RunContext, doctor_id: str):
+        """Use this tool to check the real-time availability of a doctor.
+
+        Args:
+            doctor_id: The ID of the doctor to check availability for.
+        """
+        logger.info(f"Checking availability for doctor {doctor_id}")
+        base_url = os.environ.get("INTERNAL_API_BASE_URL", "http://localhost:8000")
+        token = os.environ.get("INTERNAL_API_TOKEN")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{base_url}/api/staff/availability/?doctor_id={doctor_id}",
+                headers=headers,
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return str(data)
+                else:
+                    return f"Failed to fetch availability. Status: {response.status}"
 
 
 server = AgentServer()
@@ -226,9 +217,7 @@ async def entrypoint(ctx: JobContext):
         # tts=inference.TTS(
         #     model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
         # ),
-        tts=cartesia.TTS(
-      model="sonic-3",
-      voice="927c55a9-74a9-4272-871e-a559c8989abe"),
+        tts=cartesia.TTS(model="sonic-3", voice="927c55a9-74a9-4272-871e-a559c8989abe"),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
         # See more at https://docs.livekit.io/agents/build/turns
         # Turn detection and VAD
@@ -238,7 +227,6 @@ async def entrypoint(ctx: JobContext):
         max_endpointing_delay=1.0,
         min_interruption_duration=0.25,
         min_interruption_words=1,
-
         # false interruption recovery
         false_interruption_timeout=1.0,
         resume_false_interruption=True,
@@ -284,5 +272,5 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     cli.run_app(server)
