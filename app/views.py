@@ -47,10 +47,9 @@ from django.utils.timezone import localtime
 from docx import Document
 from datetime import datetime
 import uuid
-import os
 from django.conf import settings
 from .utils.s3_uploader import upload_to_s3
-from django.http import FileResponse, HttpResponse
+from django.http import HttpResponse
 from django.template.loader import render_to_string
 from .utils.pdf_generator import generate_pdf_from_html
 
