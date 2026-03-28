@@ -397,7 +397,7 @@ def reminder_task(session_id, reminder_type):
 
 @shared_task
 def schedule_reminder_calls(session_id):
-    from datetime import datetime, timedelta, date, time
+    from datetime import datetime, timedelta, time
     from django.utils import timezone
     from app.models import MediVoiceSession
 

@@ -26,7 +26,6 @@ from app.views import (
     Patientengagement,
     CommunityEngagement,
     EscalationEngagement,
-    validateToken,
     upload_files_log,
     Allhospitals,
     RevisitAnalyticsAPIView,

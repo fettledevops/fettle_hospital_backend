@@ -1,5 +1,4 @@
 from django.template.loader import render_to_string
-import os
 
 # weasyprint is disabled due to missing system dependencies on this environment
 # from weasyprint import HTML
