@@ -45,6 +45,10 @@ AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
 LIVEKIT_BUCKET_NAME = os.getenv("LIVEKIT_BUCKET_NAME")
 SECRET_KEY = os.getenv("SECRET_KEY")
 
+MEDIVOICE_SYNC_SECRET = os.getenv("MEDIVOICE_SYNC_SECRET", "placeholder-secret")
+INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "placeholder-token")
+INTERNAL_API_BASE_URL = os.getenv("INTERNAL_API_BASE_URL", "http://localhost:8000")
+
 if not SECRET_KEY:
     if DEBUG:
         SECRET_KEY = "django-insecure-dev-only-change-me"

@@ -10,6 +10,8 @@ class Hospital_model(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     name = models.CharField(max_length=255, unique=True)
+    reception_email = models.EmailField(null=True, blank=True)
+    pharmacy_email = models.EmailField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -206,6 +208,7 @@ class TextModel(models.Model):
         Hospital_model, on_delete=models.CASCADE, related_name="text_hospital"
     )
     text = models.TextField(null=True, blank=True)
+    media_url = models.CharField(max_length=1000, null=True, blank=True)
 
 
 class Outbound_assistant(models.Model):
@@ -257,7 +260,9 @@ class Doctor_model(models.Model):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     password_hash = models.TextField()
+    mobile_number = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=255)
+    availability = models.JSONField(default=dict, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -278,6 +283,10 @@ class MediVoiceSession(models.Model):
     patient_mobile = models.CharField(max_length=20)
     patient_email = models.EmailField(null=True, blank=True)
     overall_summary = models.TextField(null=True, blank=True)
+    diagnosis = models.TextField(null=True, blank=True)
+    medicines = models.JSONField(null=True, blank=True)
+    revisit_date = models.DateField(null=True, blank=True)
+    revisit_time = models.TimeField(null=True, blank=True)
     meta_data = models.JSONField(
         null=True, blank=True
     )  # For Gemini metadata (BP, findings, etc)

@@ -19,6 +19,8 @@ gevent
 requests
 boto3
 psycopg2-binary
+weasyprint
+django-sslserver-v2
 python-dotenv
 openai
 paypalrestsdk

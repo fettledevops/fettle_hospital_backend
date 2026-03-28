@@ -26,7 +26,6 @@ from app.views import (
     Patientengagement,
     CommunityEngagement,
     EscalationEngagement,
-    validateToken,
     upload_files_log,
     Allhospitals,
     RevisitAnalyticsAPIView,
@@ -40,6 +39,8 @@ from app.views import (
     MediVoiceSessionView,
     DoctorTranscriptionView,
     DoctorManagementView,
+    MediVoiceSyncView,
+    StaffAvailabilityView,
 )
 from phone_calling.views import (
     Outbound_call,
@@ -72,18 +73,15 @@ from chatbot.views import (
 
 urlpatterns = [
     path("api/admin/", admin.site.urls),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — patient auth
     # ----------------------------------------------------------------
     path("auth/google/", GoogleAuthView.as_view()),
-
     # ----------------------------------------------------------------
     # Unified token validation (handles both patient + doctor tokens)
     # Must come BEFORE the legacy validateToken to take precedence.
     # ----------------------------------------------------------------
     path("api/validate_token/", DermatologyValidateTokenView.as_view()),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — patient endpoints
     # ----------------------------------------------------------------
@@ -91,13 +89,11 @@ urlpatterns = [
     path("api/chat_history/", ChatView.as_view()),
     path("api/consultation_list/", ConsultationListView.as_view()),
     path("api/archive_consultation/", ArchiveConsultationView.as_view()),
-
     # ----------------------------------------------------------------
     # Dermatology chatbot — doctor endpoints
     # ----------------------------------------------------------------
     path("api/doctor_chat_view/", DoctorChatAPIView.as_view()),
     path("api/doctor_send_response/", DoctorSendResponseView.as_view()),
-
     # ----------------------------------------------------------------
     # Existing hospital management endpoints (unchanged)
     # ----------------------------------------------------------------
@@ -126,6 +122,8 @@ urlpatterns = [
     path("api/doctor_management/", DoctorManagementView.as_view()),
     path("api/doctor/login/", doctor_login_view.as_view()),
     path("api/medivoice/sessions/", MediVoiceSessionView.as_view()),
+    path("api/medivoice/sync/", MediVoiceSyncView.as_view()),
+    path("api/staff/availability/", StaffAvailabilityView.as_view()),
     path("api/hospital/doctor_transcripts/", DoctorTranscriptionView.as_view()),
     path("api/roi_metrics/", ROIMetrics.as_view()),
     path("api/department_analytics/", DepartmentAnalytics.as_view()),
