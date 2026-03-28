@@ -2024,12 +2024,12 @@ class TextView(APIView):
 
                     for num in numbers:
                         # Ensure number is a string and formatted correctly
-                        # If pandas still gives us a float-like string (e.g. "919010.0"), 
+                        # If pandas still gives us a float-like string (e.g. "919010.0"),
                         # we normalize it while being careful with leading zeros and plus signs.
                         num_str = str(num).strip()
                         if num_str.endswith(".0"):
                             num_str = num_str[:-2]
-                        
+
                         msg = text if text else "Health Update from " + hospital.name
                         if media_url:
                             msg += f"\nView attachment: {media_url}"
@@ -2293,14 +2293,6 @@ class MediVoiceSessionView(APIView):
                 revisit_time=d.get("revisitTime"),
                 meta_data=d.get("metaData", {}),
             )
-            from phone_calling.tasks import (
-                send_prescription_notifications,
-                schedule_reminder_calls,
-            )
-
-            send_prescription_notifications.delay(s.id)
-            schedule_reminder_calls.delay(s.id)
-
             for t in d.get("transcriptions", []):
                 MediVoiceTranscription.objects.create(
                     session=s,
@@ -2308,6 +2300,19 @@ class MediVoiceSessionView(APIView):
                     text=t.get("text"),
                     timestamp=t.get("timestamp", 0.0),
                 )
+
+            # Trigger notifications/reminders asynchronously
+            try:
+                from phone_calling.tasks import (
+                    send_prescription_notifications,
+                    schedule_reminder_calls,
+                )
+
+                send_prescription_notifications.delay(s.id)
+                schedule_reminder_calls.delay(s.id)
+            except Exception as celery_error:
+                print(f"Celery queueing failed: {str(celery_error)}")
+
             return Response({"msg": "Success", "session_id": str(s.id), "error": 0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
@@ -2491,8 +2496,12 @@ class MediVoiceSyncView(APIView):
                 schedule_reminder_calls,
             )
 
-            send_prescription_notifications.delay(session.id)
-            schedule_reminder_calls.delay(session.id)
+            # Trigger notifications/reminders asynchronously
+            try:
+                send_prescription_notifications.delay(session.id)
+                schedule_reminder_calls.delay(session.id)
+            except Exception as celery_error:
+                print(f"Celery queueing failed in sync: {str(celery_error)}")
 
             return Response(
                 {"msg": "Sync successful", "session_id": str(session.id), "error": 0}
