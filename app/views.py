@@ -2462,17 +2462,18 @@ class MediVoiceSyncView(APIView):
                 doctor = Doctor_model.objects.get(email=doctor_email)
             except Doctor_model.DoesNotExist:
                 return Response({"msg": "Doctor not found", "error": 1})
+            metadata_obj = data.get("metaData", {})
             session = MediVoiceSession.objects.create(
                 doctor=doctor,
                 patient_name=data.get("patientName"),
                 patient_mobile=data.get("patientMobile"),
                 patient_email=data.get("patientEmail"),
                 overall_summary=data.get("overallSummary"),
-                diagnosis=data.get("diagnosis"),
-                medicines=data.get("medicines"),
-                revisit_date=data.get("revisitDate"),
-                revisit_time=data.get("revisitTime"),
-                meta_data=data.get("metaData", {}),
+                diagnosis=metadata_obj.get("diagnosis"),
+                medicines=metadata_obj.get("medicines"),
+                revisit_date=metadata_obj.get("revisit_date"),
+                revisit_time=metadata_obj.get("revisit_time"),
+                meta_data=metadata_obj,
             )
 
             transcriptions = data.get("transcriptions", [])
