@@ -17,8 +17,10 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+# Load .env for local development only.
+# override=False ensures Railway/production environment variables always
+# take precedence over anything in .env — critical for OPENAI_API_KEY.
+load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -45,6 +47,10 @@ AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
 LIVEKIT_BUCKET_NAME = os.getenv("LIVEKIT_BUCKET_NAME")
 SECRET_KEY = os.getenv("SECRET_KEY")
 
+MEDIVOICE_SYNC_SECRET = os.getenv("MEDIVOICE_SYNC_SECRET", "placeholder-secret")
+INTERNAL_API_TOKEN = os.getenv("INTERNAL_API_TOKEN", "placeholder-token")
+INTERNAL_API_BASE_URL = os.getenv("INTERNAL_API_BASE_URL", "http://localhost:8000")
+
 if not SECRET_KEY:
     if DEBUG:
         SECRET_KEY = "django-insecure-dev-only-change-me"
@@ -67,6 +73,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "app",
     "phone_calling",
+    "inbound_dashboard",
+    "chatbot",
     "django_celery_results",
     "sslserver",
 ]
@@ -105,12 +113,6 @@ WSGI_APPLICATION = "project.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -153,7 +155,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-
 TIME_ZONE = "Asia/Kolkata"
 
 USE_I18N = True
@@ -166,6 +167,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+# Media files (uploaded images for dermatology consultations)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "mediafiles")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

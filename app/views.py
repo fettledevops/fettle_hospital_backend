@@ -1,4 +1,4 @@
-from rest_framework.response import Response
+﻿from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import (
     Admin_model,
@@ -47,8 +47,11 @@ from django.utils.timezone import localtime
 from docx import Document
 from datetime import datetime
 import uuid
-import os
-from django.http import FileResponse
+from django.conf import settings
+from .utils.s3_uploader import upload_to_s3
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from .utils.pdf_generator import generate_pdf_from_html
 
 
 # Create your views here.
@@ -644,7 +647,7 @@ class fetchpatients_restricted(APIView):
                 else:
                     lookup[key] = o.calling_process or "N/A"
             # print("lookup-->",lookup)
-            # If 'limit' is not given, empty, or 'all' → fetch all
+            # If 'limit' is not given, empty, or 'all' â†’ fetch all
             if limit_param in ["", "all"]:
                 patients = queryset
             else:
@@ -1427,10 +1430,88 @@ class CommunityEngagement(APIView):
                 "poll_participation_rate": np.round(poll_participation_rate, 2),
                 "weekly_active_users": weekly_active_users,
             }
+
+            # === Feedback Distribution (based on CallFeedbackModel) ===
+            fb_dist_qs = (
+                CallFeedbackModel.objects.filter(patient__hospital=user_id)
+                .values("call_outcome")
+                .annotate(value=Count("id"))
+                .order_by("-value")
+            )
+            feedback_distribution = []
+            for item in fb_dist_qs:
+                outcome = item["call_outcome"]
+                # Fetch detailed data for this outcome
+                details = (
+                    CallFeedbackModel.objects.filter(
+                        patient__hospital=user_id, call_outcome=outcome
+                    )
+                    .select_related("patient")
+                    .order_by("-called_at")[:10]
+                )
+                feedback_distribution.append(
+                    {
+                        "name": outcome.replace("_", " ").title(),
+                        "value": item["value"],
+                        "patients": [
+                            {
+                                "name": d.patient.patient_name,
+                                "date": (
+                                    d.called_at.strftime("%Y-%m-%d")
+                                    if d.called_at
+                                    else "N/A"
+                                ),
+                                "feedback": d.remarks or "No remarks provided.",
+                            }
+                            for d in details
+                        ],
+                    }
+                )
+
+            # === Patient Intents (based on CommunityEngagementModel engagement types) ===
+            intent_qs = (
+                CommunityEngagementModel.objects.filter(patient__hospital=user_id)
+                .values("engagement_type")
+                .annotate(value=Count("id"))
+                .order_by("-value")
+            )
+            patient_intents = []
+            for item in intent_qs:
+                etype = item["engagement_type"]
+                details = (
+                    CommunityEngagementModel.objects.filter(
+                        patient__hospital=user_id, engagement_type=etype
+                    )
+                    .select_related("patient")
+                    .order_by("-created_at")[:10]
+                )
+                patient_intents.append(
+                    {
+                        "name": etype.replace("_", " ").title(),
+                        "value": item["value"],
+                        "intent": etype.replace("_", " ").title(),
+                        "count": item["value"],
+                        "patients": [
+                            {
+                                "name": d.patient.patient_name,
+                                "date": (
+                                    d.created_at.strftime("%Y-%m-%d")
+                                    if d.created_at
+                                    else "N/A"
+                                ),
+                                "feedback": f"Engaged via {etype}",
+                            }
+                            for d in details
+                        ],
+                    }
+                )
+
             return Response(
                 {
                     "communityGrowthData": community_growth_data,
                     "departmentEngagementData": department_engagement_data,
+                    "feedbackDistribution": feedback_distribution,
+                    "patientIntents": patient_intents,
                     "metadata": meta_data,
                     "metrics": metrics,
                 }
@@ -1688,6 +1769,13 @@ class EscalationEngagement(APIView):
                 "total_escalations": total_escalations,
                 "avg_resolution_time": avg_resolution_minutes,
                 "resolved_today": resolved_today,
+                "formulae": {
+                    "Revenue Influenced": "Appointments Booked * 650",
+                    "Leakage Prevented": "Missed Calls * 0.42 * 650",
+                    "Staff Hours Saved": "Total Call Duration / 60",
+                    "Equivalent FTE Freed": "Total Call Duration / 6000",
+                    "Cost Efficiency Value": "(Total Call Duration / 6000) * 40000",
+                },
             }
             return Response(
                 {
@@ -1844,62 +1932,40 @@ class PdfView(APIView):
                 else 0
             )
 
-            dict_obj = {
-                "{{reporting_period}}": f"{start_str} to {end_str}",
-                "{{hospital_name}}": hospital_name.title(),
-                "{{call_patients}}": connected_data,
-                "{{call_answer_rate}}": connected_people_rate,
-                "{{community_added}}": community_members,
-                "{{community_conversion_rate}}": community_members_rate,
-                "{{poll_number}}": poll_participants,
-                "{{escalation_number}}": total_escalations,
-                "{{revisit_conversion_rate}}": revisit_conversion_rate,
-                "{{revisit_number}}": total_revisits,
-                "{{call_connected}}": call_cc,
-                "{{call_p}}": connected_data,
-                "{{calla_c}}": connected_people_rate,
-                "{{com_c}}": community_members,
-                "{{coma_c}}": community_members_rate,
-                "{{ess_c}}": total_escalations,
-                "{{reva_c}}": revisit_conversion_rate,
-                "{{rev_c}}": total_revisits,
-                "{{call_c}}": call_cc,
+            report_type = inputdict.get("report_type", "detailed")
+
+            context = {
+                "report_type": report_type,
+                "reporting_period": f"{start_str} to {end_str}",
+                "hospital_name": hospital_name.title(),
+                "call_patients": connected_data,
+                "call_answer_rate": connected_people_rate,
+                "community_added": community_members,
+                "community_conversion_rate": community_members_rate,
+                "poll_number": poll_participants,
+                "escalation_number": total_escalations,
+                "revisit_conversion_rate": np.round(revisit_conversion_rate, 2),
+                "revisit_number": total_revisits,
+                "call_connected": call_cc,
             }
 
-            report_type = inputdict.get("report_type", "detailed")
+            # If only metrics, we can use a different template or logic
+            template = "report_template.html"
             if report_type == "only_metrics":
-                for p in [
-                    "summary",
-                    "analysis",
-                    "recommendations",
-                    "introduction",
-                    "conclusion",
-                    "observation",
-                    "patient_feedback_summary",
-                    "executive_summary",
-                ]:
-                    dict_obj[f"{{{{{p}}}}}"] = " "
-                template = "Amor-Hospitals-Metrics-Only.docx"
-            else:
-                template = "Amor-Hospitals-May-2025-PTS-Report.docx"
+                # Maybe use a simplified template or context
+                pass
 
-            sheet_path = os.path.dirname(os.path.abspath(__file__))
-            docx_path = os.path.join(sheet_path, template)
-            if not os.path.exists(docx_path):
-                docx_path = os.path.join(
-                    sheet_path, "Amor-Hospitals-May-2025-PTS-Report.docx"
+            html_string = render_to_string(template, context)
+            pdf_bytes = generate_pdf_from_html(html_string)
+
+            if pdf_bytes:
+                response = HttpResponse(pdf_bytes, content_type="application/pdf")
+                response["Content-Disposition"] = (
+                    f'attachment; filename="report_{uuid.uuid4()}.pdf"'
                 )
-
-            filename = f"report_{uuid.uuid4()}.docx"
-            file_path = os.path.join(sheet_path, "files", filename)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            replace_placeholders_in_docx_preserving_styles(
-                docx_path, file_path, dict_obj
-            )
-            return FileResponse(
-                open(file_path, "rb"), as_attachment=True, filename=filename
-            )
+                return response
+            else:
+                return Response({"error": 1, "errorMsg": "PDF generation failed"})
         except Exception as e:
             return Response({"error": 1, "errorMsg": str(e)})
 
@@ -1909,14 +1975,77 @@ class TextView(APIView):
 
     def post(self, request):
         try:
-            inputdict = request.data
-            text = inputdict["text"]
+            # Handle both JSON and multipart/form-data
+            text = request.data.get("text")
+            media_file = request.FILES.get("media")
+            target_list_file = request.FILES.get("target_list")
+
             user_id = Hospital_user_model.objects.get(id=request.user_id).hospital.id
-            print("user_id-->", user_id)
-            # Get the Hospital_model instance
             hospital = Hospital_model.objects.get(id=user_id)
-            TextModel.objects.update_or_create(hospital=hospital, text=text)
-            return Response({"error": 0, "msg": "Success"})
+
+            media_url = None
+            if media_file:
+                # Use absolute path for S3 upload
+                media_url = upload_to_s3(
+                    media_file, f"whatsapp_media/{uuid.uuid4()}_{media_file.name}"
+                )
+
+            # Update or create TextModel for hospital's default message
+            text_obj, created = TextModel.objects.update_or_create(
+                hospital=hospital,
+                defaults=(
+                    {"text": text, "media_url": media_url}
+                    if text
+                    else {"media_url": media_url}
+                ),
+            )
+
+            if target_list_file:
+                # Parse Excel/CSV target list
+                if target_list_file.name.endswith(".xlsx"):
+                    df = pd.read_excel(target_list_file, dtype=str)
+                else:
+                    df = pd.read_csv(target_list_file, dtype=str)
+
+                # Identify mobile number column
+                numbers = []
+                possible_cols = ["Mobile No", "Mobile", "Phone", "mobile_no", "Number"]
+                for col in possible_cols:
+                    if col in df.columns:
+                        numbers = df[col].dropna().tolist()
+                        break
+
+                if not numbers:
+                    # Try first column if none of the specific names match
+                    numbers = df.iloc[:, 0].dropna().tolist()
+
+                if numbers:
+                    from phone_calling.tasks import cloudconnect_whatsapp_msg
+
+                    for num in numbers:
+                        # Ensure number is a string and formatted correctly
+                        # If pandas still gives us a float-like string (e.g. "919010.0"),
+                        # we normalize it while being careful with leading zeros and plus signs.
+                        num_str = str(num).strip()
+                        if num_str.endswith(".0"):
+                            num_str = num_str[:-2]
+
+                        msg = text if text else "Health Update from " + hospital.name
+                        if media_url:
+                            msg += f"\nView attachment: {media_url}"
+                        cloudconnect_whatsapp_msg(msg, to_number=num_str)
+
+            return Response(
+                {
+                    "error": 0,
+                    "msg": (
+                        "Message broadcast initiated"
+                        if target_list_file
+                        else "Template saved"
+                    ),
+                    "media_url": media_url,
+                }
+            )
         except Exception as e:
             return Response({"error": 1, "msg": str(e)})
 
@@ -1994,12 +2123,12 @@ class ROIMetrics(APIView):
                         {
                             "name": "Revenue Influenced",
                             "value": booked * 650,
-                            "unit": "₹",
+                            "unit": "â‚¹",
                         },
                         {
                             "name": "Leakage Prevented",
                             "value": int(missed * 0.42 * 650),
-                            "unit": "₹",
+                            "unit": "â‚¹",
                         },
                     ],
                     "roi_efficiency": [
@@ -2016,7 +2145,7 @@ class ROIMetrics(APIView):
                         {
                             "name": "Cost Efficiency Value",
                             "value": int(tdur / 6000 * 40000),
-                            "unit": "₹",
+                            "unit": "â‚¹",
                         },
                     ],
                     "error": 0,
@@ -2156,7 +2285,13 @@ class MediVoiceSessionView(APIView):
                 doctor=doctor,
                 patient_name=d.get("patientName"),
                 patient_mobile=d.get("patientMobile"),
+                patient_email=d.get("patientEmail"),
                 overall_summary=d.get("overallSummary"),
+                diagnosis=d.get("diagnosis"),
+                medicines=d.get("medicines"),
+                revisit_date=d.get("revisitDate"),
+                revisit_time=d.get("revisitTime"),
+                meta_data=d.get("metaData", {}),
             )
             for t in d.get("transcriptions", []):
                 MediVoiceTranscription.objects.create(
@@ -2165,6 +2300,19 @@ class MediVoiceSessionView(APIView):
                     text=t.get("text"),
                     timestamp=t.get("timestamp", 0.0),
                 )
+
+            # Trigger notifications/reminders asynchronously
+            try:
+                from phone_calling.tasks import (
+                    send_prescription_notifications,
+                    schedule_reminder_calls,
+                )
+
+                send_prescription_notifications.delay(s.id)
+                schedule_reminder_calls.delay(s.id)
+            except Exception as celery_error:
+                print(f"Celery queueing failed: {str(celery_error)}")
+
             return Response({"msg": "Success", "session_id": str(s.id), "error": 0})
         except Exception as e:
             return Response({"msg": str(e), "error": 1})
@@ -2270,6 +2418,93 @@ class DoctorTranscriptionView(APIView):
 
             return Response(
                 {"sessions": session_data, "doctors": list(doctors), "error": 0}
+            )
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+
+class StaffAvailabilityView(APIView):
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        try:
+            hospital_id = Hospital_user_model.objects.get(
+                id=request.user_id
+            ).hospital.id
+            doctor_id = request.query_params.get("doctor_id")
+            doctors = Doctor_model.objects.filter(hospital_id=hospital_id)
+
+            if doctor_id and doctor_id != "all":
+                doctors = doctors.filter(id=doctor_id)
+
+            data = []
+            for doc in doctors:
+                data.append(
+                    {
+                        "id": str(doc.id),
+                        "name": doc.name,
+                        "department": doc.department,
+                        "availability": doc.availability,
+                    }
+                )
+            return Response({"data": data, "error": 0})
+        except Exception as e:
+            return Response({"msg": str(e), "error": 1})
+
+
+class MediVoiceSyncView(APIView):
+    # This is a webhook sync view
+    def post(self, request):
+        try:
+            # Simple secret token check
+            secret = request.headers.get("X-Fettle-Secret")
+            if secret != settings.MEDIVOICE_SYNC_SECRET:
+                return Response({"msg": "Unauthorized", "error": 1}, status=401)
+
+            data = request.data
+            # We look for doctor by email or mobile if provided in data
+            doctor_email = data.get("doctorEmail")
+            try:
+                doctor = Doctor_model.objects.get(email=doctor_email)
+            except Doctor_model.DoesNotExist:
+                return Response({"msg": "Doctor not found", "error": 1})
+            metadata_obj = data.get("metaData", {})
+            session = MediVoiceSession.objects.create(
+                doctor=doctor,
+                patient_name=data.get("patientName"),
+                patient_mobile=data.get("patientMobile"),
+                patient_email=data.get("patientEmail"),
+                overall_summary=data.get("overallSummary"),
+                diagnosis=metadata_obj.get("diagnosis"),
+                medicines=metadata_obj.get("medicines"),
+                revisit_date=metadata_obj.get("revisit_date"),
+                revisit_time=metadata_obj.get("revisit_time"),
+                meta_data=metadata_obj,
+            )
+
+            transcriptions = data.get("transcriptions", [])
+            for t in transcriptions:
+                MediVoiceTranscription.objects.create(
+                    session=session,
+                    speaker=t.get("speaker"),
+                    text=t.get("text"),
+                    timestamp=t.get("timestamp", 0.0),
+                )
+
+            from phone_calling.tasks import (
+                send_prescription_notifications,
+                schedule_reminder_calls,
+            )
+
+            # Trigger notifications/reminders asynchronously
+            try:
+                send_prescription_notifications.delay(session.id)
+                schedule_reminder_calls.delay(session.id)
+            except Exception as celery_error:
+                print(f"Celery queueing failed in sync: {str(celery_error)}")
+
+            return Response(
+                {"msg": "Sync successful", "session_id": str(session.id), "error": 0}
             )
         except Exception as e:
             return Response({"msg": str(e), "error": 1})

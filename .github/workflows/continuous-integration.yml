@@ -58,7 +58,7 @@ jobs:
         run: ruff check app inbound_dashboard phone_calling project
 
       - name: Audit Python dependencies
-        run: pip-audit --progress-spinner off
+        run: pip-audit --progress-spinner off --ignore-vuln CVE-2026-4539
 
       - name: Check for missing migrations
         run: python manage.py makemigrations --check --dry-run

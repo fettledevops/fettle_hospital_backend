@@ -6,7 +6,7 @@ import os
 
 load_dotenv()
 
-AGENT_NAME = "amor-inb-final"
+AGENT_NAME = "my-agent"
 
 
 async def _dispatch_call(phone_number: str, id_key: str):
