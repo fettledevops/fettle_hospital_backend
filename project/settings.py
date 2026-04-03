@@ -33,6 +33,23 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 # - In development (DEBUG=True), default to 'prefer' to work with local Postgres without SSL.
 DB_SSL_MODE = os.getenv("DB_SSL_MODE") or ("require" if not DEBUG else "prefer")
 
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": True,
+        },
+    },
+}
+
 ALLOWED_HOSTS = [
     host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()
 ]

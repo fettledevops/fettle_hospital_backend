@@ -8,4 +8,4 @@ rtp_port: 10000-20000
 use_external_ip: true
 
 logging:
-  level: info
+  level: debug

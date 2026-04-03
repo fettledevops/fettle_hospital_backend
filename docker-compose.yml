@@ -84,20 +84,13 @@ services:
         required: false
     environment:
       RUN_MIGRATIONS: "true"
-    command:
-      - python
-      - manage.py
-      - runsslserver
-      - 0.0.0.0:8000
-      - --certificate
-      - /app/config/tls/fullchain.pem
-      - --key
-      - /app/config/tls/privkey.pem
     ports:
       - "8000:8000"
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - main-network
 
   celery-prod:
     build:
@@ -114,6 +107,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
   livekit-server:
     build:
       context: .
@@ -125,6 +119,8 @@ services:
         required: false
     command: --config /etc/livekit/livekit.yaml
     working_dir: /etc/livekit
+    volumes:
+      - ./config/livekit:/etc/livekit:ro
     network_mode: host
     depends_on:
       redis:
@@ -145,6 +141,8 @@ services:
         required: false
     command: --config /etc/livekit/sip.yaml
     working_dir: /etc/livekit
+    volumes:
+      - ./config/livekit:/etc/livekit:ro
     network_mode: host
     depends_on:
       livekit-server:
@@ -152,3 +150,7 @@ services:
 
 volumes:
   pgdata_dev:
+
+networks:
+  main-network:
+    external: true
